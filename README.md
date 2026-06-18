@@ -15,4 +15,10 @@ Inspect parser table counts without printing message content:
 python3 -m chatgpt_wrapped inspect workspace/export.sqlite
 ```
 
+Compute overview metrics:
+
+```bash
+python3 -m chatgpt_wrapped overview workspace/export.sqlite
+```
+
 Parser outputs may contain private export data. Keep them under `workspace/` or another ignored path.

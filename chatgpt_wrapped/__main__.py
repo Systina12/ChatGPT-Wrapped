@@ -5,6 +5,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+from .overview import compute_overview
 from .parser import parse_export
 
 
@@ -36,6 +37,9 @@ def main() -> int:
     inspect_parser = subparsers.add_parser("inspect", help="show parser table counts without printing content")
     inspect_parser.add_argument("db_path", type=Path)
 
+    overview_parser = subparsers.add_parser("overview", help="compute overview metrics from a parsed SQLite database")
+    overview_parser.add_argument("db_path", type=Path)
+
     args = parser.parse_args()
     if args.command == "parse":
         result = parse_export(args.export_dir, args.out)
@@ -43,6 +47,9 @@ def main() -> int:
         return 0
     if args.command == "inspect":
         print(json.dumps({"db_path": str(args.db_path), "counts": _inspect(args.db_path)}, indent=2, sort_keys=True))
+        return 0
+    if args.command == "overview":
+        print(json.dumps(compute_overview(args.db_path), ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     return 2
 
