@@ -242,7 +242,7 @@ class _ExportParser:
             )
             self.conn.execute(
                 """
-                insert or replace into conversations(
+                insert into conversations(
                     conversation_id, source, title, create_time_text, update_time_text, raw_json
                 )
                 values (?, 'group_chat', ?, ?, ?, ?)
@@ -377,7 +377,7 @@ class _ExportParser:
         conversation_id = _conversation_id(conversation)
         self.conn.execute(
             """
-            insert or replace into conversations(
+            insert into conversations(
                 conversation_id, source, title, create_time, update_time, current_node,
                 default_model_slug, is_archived, is_starred, is_shared, raw_json
             )
@@ -640,7 +640,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         );
 
         create table conversations (
-            conversation_id text primary key,
+            id integer primary key autoincrement,
+            conversation_id text not null,
             source text not null,
             title text,
             create_time real,
@@ -766,6 +767,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         );
 
         create index idx_messages_conversation on messages(conversation_id);
+        create index idx_conversations_conversation_id on conversations(conversation_id);
+        create index idx_conversations_source on conversations(source);
         create index idx_assets_conversation on assets(conversation_id);
         create index idx_assets_message on assets(message_id);
         create index idx_feedback_conversation on feedback(conversation_id);
