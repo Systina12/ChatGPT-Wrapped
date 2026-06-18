@@ -214,5 +214,11 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# ChatGPT export parser outputs
+workspace/
+*.db
+*.sqlite
+*.sqlite3
+
 # Streamlit
 .streamlit/secrets.toml
