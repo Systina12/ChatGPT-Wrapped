@@ -1,30 +1,38 @@
 # ChatGPT-Wrapped
-Build your own ChatGPT Wrapped from OpenAI exports.
 
-## Parser
+Build a local ChatGPT Wrapped from official OpenAI ChatGPT exports.
 
-Parse a ChatGPT export directory into a local SQLite database:
+This project is now a pure frontend React app. The export is parsed in the browser, statistics are computed on the user's device, and no backend or upload service is required.
 
-```bash
-python3 -m chatgpt_wrapped parse data/<export-directory> --out workspace/export.sqlite
-```
-
-Inspect parser table counts without printing message content:
+## Run
 
 ```bash
-python3 -m chatgpt_wrapped inspect workspace/export.sqlite
+npm install
+npm run dev
 ```
 
-Compute overview metrics:
+Open the Vite URL, then choose either:
+
+- a ChatGPT export `.zip`
+- an extracted ChatGPT export folder
+
+The app generates a `WrappedData` JSON object with overview, timeline, activity, conversation, message, model, asset, language, frequent-word, quality, and highlight statistics.
+
+## Build
 
 ```bash
-python3 -m chatgpt_wrapped overview workspace/export.sqlite
+npm run build
 ```
 
-Export Web-ready statistics data:
+## Project Structure
 
-```bash
-python3 -m chatgpt_wrapped export-data workspace/export.sqlite --out workspace/wrapped-data.json
-```
+- `src/lib/export/`: browser-side file loading and ChatGPT export parsing
+- `src/lib/stats/`: statistics builder for report-ready wrapped data
+- `src/workers/`: Web Worker entry for parsing and computation
+- `src/types/`: export and wrapped-data types
+- `docs/export-data-schema.md`: generic notes about official export files
+- `legacy/python/`: previous Python parser and tests, kept as a migration reference
 
-Parser outputs may contain private export data. Keep them under `workspace/` or another ignored path.
+## Local Data
+
+Keep real exports and generated output under ignored paths such as `data/` or `workspace/`.
