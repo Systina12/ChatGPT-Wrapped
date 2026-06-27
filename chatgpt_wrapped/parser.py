@@ -198,8 +198,9 @@ class _ExportParser:
                 if not isinstance(conversation, dict):
                     self._warn("invalid_conversation", f"{path.name}[{index}] is not an object")
                     continue
-                self._insert_conversation(conversation)
-                self._insert_conversation_messages(conversation)
+                fallback_id = f"{path.stem}:{index}"
+                self._insert_conversation(conversation, fallback_id)
+                self._insert_conversation_messages(conversation, fallback_id)
 
     def _parse_group_chats(self) -> None:
         data = self._load_optional_json("group_chats.json")
@@ -373,8 +374,8 @@ class _ExportParser:
                 ),
             )
 
-    def _insert_conversation(self, conversation: JsonObject) -> None:
-        conversation_id = _conversation_id(conversation)
+    def _insert_conversation(self, conversation: JsonObject, fallback_id: str) -> None:
+        conversation_id = _conversation_id(conversation, fallback_id)
         self.conn.execute(
             """
             insert into conversations(
@@ -399,8 +400,8 @@ class _ExportParser:
             ),
         )
 
-    def _insert_conversation_messages(self, conversation: JsonObject) -> None:
-        conversation_id = _conversation_id(conversation)
+    def _insert_conversation_messages(self, conversation: JsonObject, fallback_id: str) -> None:
+        conversation_id = _conversation_id(conversation, fallback_id)
         mapping = conversation.get("mapping")
         if mapping is None:
             return
@@ -776,11 +777,11 @@ def _init_schema(conn: sqlite3.Connection) -> None:
     )
 
 
-def _conversation_id(conversation: JsonObject) -> str:
+def _conversation_id(conversation: JsonObject, fallback_id: str = "unknown-conversation") -> str:
     return (
         _as_str(conversation.get("conversation_id"))
         or _as_str(conversation.get("id"))
-        or "unknown-conversation"
+        or fallback_id
     )
 
 

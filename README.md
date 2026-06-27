@@ -21,4 +21,10 @@ Compute overview metrics:
 python3 -m chatgpt_wrapped overview workspace/export.sqlite
 ```
 
+Export Web-ready statistics data:
+
+```bash
+python3 -m chatgpt_wrapped export-data workspace/export.sqlite --out workspace/wrapped-data.json
+```
+
 Parser outputs may contain private export data. Keep them under `workspace/` or another ignored path.
