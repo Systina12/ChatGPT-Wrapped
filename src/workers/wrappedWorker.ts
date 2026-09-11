@@ -1,13 +1,14 @@
 import { filesToExportEntries } from "../lib/export/fileInput";
 import { parseExportEntries } from "../lib/export/parser";
 import { buildWrappedData } from "../lib/stats/builder";
+import type { WrappedData } from "../types/wrapped";
 
 export interface WorkerRequest {
   files: File[];
 }
 
 export type WorkerResponse =
-  | { type: "done"; data: ReturnType<typeof buildWrappedData> }
+  | { type: "done"; data: WrappedData }
   | { type: "error"; message: string };
 
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {

@@ -1,0 +1,129 @@
+.hero-band {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  gap: 26px;
+  min-height: 360px;
+  overflow: hidden;
+  border-radius: 30px;
+  padding: clamp(28px, 5vw, 64px);
+  background:
+    radial-gradient(circle at 82% 18%, rgba(222, 197, 255, 0.9), transparent 21rem),
+    linear-gradient(135deg, #fff 0%, #fcf8ff 57%, #f2e9ff 100%);
+}
+
+.hero-band::after {
+  position: absolute;
+  right: -110px;
+  bottom: -160px;
+  width: 430px;
+  height: 430px;
+  border: 1px solid rgba(140, 92, 196, 0.16);
+  border-radius: 50%;
+  content: "";
+  box-shadow: 0 0 0 34px rgba(140, 92, 196, 0.04), 0 0 0 68px rgba(140, 92, 196, 0.03);
+}
+
+.hero-copy {
+  position: relative;
+  z-index: 1;
+  align-self: center;
+}
+
+.lede {
+  max-width: 690px;
+  margin-bottom: 22px;
+  color: #655b75;
+  font-size: clamp(0.98rem, 1.5vw, 1.14rem);
+  line-height: 1.65;
+}
+
+.privacy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d9c8ed;
+  border-radius: 999px;
+  padding: 9px 13px;
+  color: #5a427d;
+  background: rgba(255, 255, 255, 0.65);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.hero-poster {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 250px;
+  overflow: hidden;
+  border: 1px solid rgba(100, 65, 148, 0.15);
+  border-radius: 24px;
+  padding: 26px;
+  color: #fff;
+  background: linear-gradient(150deg, #a776e3 0%, #7151a7 54%, #47326f 100%);
+  box-shadow: 0 22px 45px rgba(74, 43, 120, 0.2);
+}
+
+.hero-poster::before {
+  position: absolute;
+  top: -80px;
+  left: -80px;
+  width: 260px;
+  height: 260px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  content: "";
+  box-shadow: 0 0 0 28px rgba(255, 255, 255, 0.08), 0 0 0 56px rgba(255, 255, 255, 0.05);
+}
+
+.poster-orbit {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  transform: rotate(28deg);
+}
+
+.poster-orbit-one {
+  top: 20px;
+  right: -50px;
+  width: 220px;
+  height: 96px;
+}
+
+.poster-orbit-two {
+  top: 62px;
+  right: -30px;
+  width: 190px;
+  height: 68px;
+}
+
+.poster-kicker,
+.hero-poster strong,
+.hero-poster small {
+  position: relative;
+  z-index: 1;
+}
+
+.poster-kicker {
+  margin-bottom: auto;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.hero-poster strong {
+  margin-bottom: 14px;
+  font-size: clamp(1.45rem, 2.8vw, 2.15rem);
+  line-height: 1.06;
+  letter-spacing: -0.04em;
+}
+
+.hero-poster small {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.78rem;
+}

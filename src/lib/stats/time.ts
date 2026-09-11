@@ -1,3 +1,5 @@
+import type { DateRange, DayPeriod } from "../../types/wrapped";
+
 export function toDate(value: unknown): Date | null {
   if (value === null || value === undefined) {
     return null;
@@ -41,7 +43,7 @@ export function weekdayKey(value: Date): string {
   return String(day === 0 ? 6 : day - 1);
 }
 
-export function dayPeriod(value: Date): string {
+export function dayPeriod(value: Date): DayPeriod {
   const hour = value.getUTCHours();
   if (hour < 6) return "late_night";
   if (hour < 12) return "morning";
@@ -49,7 +51,7 @@ export function dayPeriod(value: Date): string {
   return "evening";
 }
 
-export function longestStreak(dayKeys: Iterable<string>): Record<string, number | string | null> {
+export function longestStreak(dayKeys: Iterable<string>): DateRange {
   const dates = [...new Set(dayKeys)].map(parseDay).filter(isDate).sort((left, right) => left.getTime() - right.getTime());
   if (dates.length === 0) {
     return { days: 0, start: null, end: null };
@@ -85,7 +87,7 @@ export function longestStreak(dayKeys: Iterable<string>): Record<string, number 
   };
 }
 
-export function longestGap(dayKeys: Iterable<string>): Record<string, number | string | null> {
+export function longestGap(dayKeys: Iterable<string>): DateRange {
   const dates = [...new Set(dayKeys)].map(parseDay).filter(isDate).sort((left, right) => left.getTime() - right.getTime());
   if (dates.length < 2) {
     return { days: 0, start: null, end: null };

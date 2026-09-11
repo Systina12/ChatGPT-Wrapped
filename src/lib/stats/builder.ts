@@ -1,5 +1,30 @@
 import type { ParsedAsset, ParsedConversation, ParsedExport, ParsedMessage } from "../../types/export";
-import type { Distribution, MetricBucket, TopConversation, TopMessage, WrappedData } from "../../types/wrapped";
+import type {
+  ActivityStats,
+  AssetCategory,
+  AssetStats,
+  ConversationStats,
+  ConversationSummary,
+  DayPeriod,
+  Distribution,
+  FrequentWordStats,
+  HighlightStats,
+  KeyCount,
+  LanguageStats,
+  LargestAsset,
+  MessageStats,
+  MetricBucket,
+  ModelStats,
+  ModelUsage,
+  OverviewStats,
+  QualityStats,
+  TimelineBucket,
+  TimelineStats,
+  TopConversation,
+  TopMessage,
+  WrappedData,
+  WrappedMeta,
+} from "../../types/wrapped";
 import {
   codeBlockCount,
   excerpt,
@@ -31,7 +56,7 @@ interface MessageWithStats extends ParsedMessage {
 }
 
 interface AssetWithStats extends ParsedAsset {
-  category: "image" | "voice" | "file";
+  category: AssetCategory;
 }
 
 interface BuildContext {
@@ -72,23 +97,27 @@ export function buildWrappedData(parsed: ParsedExport): WrappedData {
     assets: parsed.assets.map((asset) => ({ ...asset, category: assetCategory(asset) })),
   };
 
+  const timelineStats = timeline(context);
+  const activityStats = activity(context.messages);
+  const modelStatsValue = modelStats(context.messages);
+
   return {
     meta: meta(context),
     overview: overview(context),
-    timeline: timeline(context),
-    activity: activity(context.messages),
+    timeline: timelineStats,
+    activity: activityStats,
     conversations: conversationStats(context),
     messages: messageStats(context.messages),
-    models: modelStats(context.messages),
+    models: modelStatsValue,
     assets: assetStats(context),
     language: languageStats(context.messages),
     frequent_words: frequentWords(context.messages),
     quality: qualityStats(context),
-    highlights: highlights(context),
+    highlights: highlights(context, timelineStats, activityStats, modelStatsValue),
   };
 }
 
-function meta(context: BuildContext): WrappedData["meta"] {
+function meta(context: BuildContext): WrappedMeta {
   return {
     generated_at: new Date().toISOString(),
     schema_version: 1,
@@ -111,7 +140,7 @@ function meta(context: BuildContext): WrappedData["meta"] {
   };
 }
 
-function overview(context: BuildContext): Record<string, unknown> {
+function overview(context: BuildContext): OverviewStats {
   const userMessages = context.messages.filter((message) => message.role === "user");
   const assistantMessages = context.messages.filter((message) => message.role === "assistant");
   const userCharacterCount = sum(userMessages.map((message) => message.characterCount));
@@ -150,7 +179,7 @@ function overview(context: BuildContext): Record<string, unknown> {
   };
 }
 
-function timeline(context: BuildContext): Record<string, unknown> {
+function timeline(context: BuildContext): TimelineStats {
   const buckets = {
     years: new Map<string, MetricBucket>(),
     months: new Map<string, MetricBucket>(),
@@ -202,10 +231,10 @@ function timeline(context: BuildContext): Record<string, unknown> {
   };
 }
 
-function activity(messages: MessageWithStats[]): Record<string, unknown> {
+function activity(messages: MessageWithStats[]): ActivityStats {
   const byHour = Object.fromEntries(Array.from({ length: 24 }, (_, index) => [String(index).padStart(2, "0"), 0]));
   const byWeekday = Object.fromEntries(Array.from({ length: 7 }, (_, index) => [String(index), 0]));
-  const byPeriod = { late_night: 0, morning: 0, afternoon: 0, evening: 0 };
+  const byPeriod: Record<DayPeriod, number> = { late_night: 0, morning: 0, afternoon: 0, evening: 0 };
   const weekdayVsWeekend = { weekday: 0, weekend: 0 };
 
   messages.forEach((message) => {
@@ -214,7 +243,7 @@ function activity(messages: MessageWithStats[]): Record<string, unknown> {
     }
     byHour[hourKey(message.createdAt)] += 1;
     byWeekday[weekdayKey(message.createdAt)] += 1;
-    byPeriod[dayPeriod(message.createdAt) as keyof typeof byPeriod] += 1;
+    byPeriod[dayPeriod(message.createdAt)] += 1;
     weekdayVsWeekend[message.createdAt.getUTCDay() === 0 || message.createdAt.getUTCDay() === 6 ? "weekend" : "weekday"] += 1;
   });
 
@@ -228,7 +257,7 @@ function activity(messages: MessageWithStats[]): Record<string, unknown> {
   };
 }
 
-function conversationStats(context: BuildContext): Record<string, unknown> {
+function conversationStats(context: BuildContext): ConversationStats {
   const ordinary = ordinaryAggregates(context);
   return {
     message_count_distribution: distribution(ordinary.map((item) => item.messageCount)),
@@ -246,7 +275,7 @@ function conversationStats(context: BuildContext): Record<string, unknown> {
   };
 }
 
-function messageStats(messages: MessageWithStats[]): Record<string, unknown> {
+function messageStats(messages: MessageWithStats[]): MessageStats {
   const user = messages.filter((message) => message.role === "user");
   const assistant = messages.filter((message) => message.role === "assistant");
   const punctuation = { question_marks: 0, exclamation_marks: 0 };
@@ -275,7 +304,7 @@ function messageStats(messages: MessageWithStats[]): Record<string, unknown> {
   };
 }
 
-function modelStats(messages: MessageWithStats[]): Record<string, unknown> {
+function modelStats(messages: MessageWithStats[]): ModelStats {
   const byModel = new Map<string, { messageCount: number; characterCount: number; firstSeenAt: Date | null; lastSeenAt: Date | null }>();
   const monthly = new Map<string, Map<string, number>>();
 
@@ -295,7 +324,7 @@ function modelStats(messages: MessageWithStats[]): Record<string, unknown> {
     byModel.set(model, stats);
   });
 
-  const models = [...byModel.entries()]
+  const models: ModelUsage[] = [...byModel.entries()]
     .map(([model, stats]) => ({
       model,
       message_count: stats.messageCount,
@@ -312,7 +341,7 @@ function modelStats(messages: MessageWithStats[]): Record<string, unknown> {
   };
 }
 
-function assetStats(context: BuildContext): Record<string, unknown> {
+function assetStats(context: BuildContext): AssetStats {
   const messageTimes = new Map(context.messages.map((message) => [message.messageId, message.createdAt]));
   const usableAssets = context.assets.filter((asset) => asset.source !== "library_file");
   const mime = counter(usableAssets.map((asset) => asset.mimeType || "unknown"));
@@ -341,7 +370,7 @@ function assetStats(context: BuildContext): Record<string, unknown> {
   };
 }
 
-function languageStats(messages: MessageWithStats[]): Record<string, unknown> {
+function languageStats(messages: MessageWithStats[]): LanguageStats {
   const totals = { chinese_characters: 0, english_words: 0, digit_characters: 0 };
   const buckets = new Map<string, number>();
   messages.forEach((message) => {
@@ -357,7 +386,7 @@ function languageStats(messages: MessageWithStats[]): Record<string, unknown> {
   };
 }
 
-function frequentWords(messages: MessageWithStats[]): Record<string, unknown> {
+function frequentWords(messages: MessageWithStats[]): FrequentWordStats {
   const monthly = new Map<string, Array<string | null>>();
   messages.forEach((message) => {
     if (!message.createdAt) {
@@ -376,7 +405,7 @@ function frequentWords(messages: MessageWithStats[]): Record<string, unknown> {
   };
 }
 
-function qualityStats(context: BuildContext): Record<string, unknown> {
+function qualityStats(context: BuildContext): QualityStats {
   const ordinary = ordinaryAggregates(context);
   return {
     feedback_count: context.parsed.feedback.length,
@@ -389,11 +418,13 @@ function qualityStats(context: BuildContext): Record<string, unknown> {
   };
 }
 
-function highlights(context: BuildContext): Record<string, unknown> {
+function highlights(
+  context: BuildContext,
+  timelineStats: TimelineStats,
+  activityStats: ActivityStats,
+  modelStatsValue: ModelStats,
+): HighlightStats {
   const ordinary = ordinaryAggregates(context);
-  const timelineStats = timeline(context);
-  const activityStats = activity(context.messages);
-  const modelStatsValue = modelStats(context.messages);
   return {
     most_active_day: timelineStats.most_active_day,
     most_active_month: timelineStats.most_active_month,
@@ -513,11 +544,11 @@ function addBucketMetric(
   });
 }
 
-function sortedBucket(bucket: Map<string, MetricBucket>): Array<Record<string, unknown>> {
+function sortedBucket(bucket: Map<string, MetricBucket>): TimelineBucket[] {
   return [...bucket.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([key, value]) => ({ key, ...value }));
 }
 
-function maxBucket(bucket: Map<string, MetricBucket>, metric: string): Record<string, unknown> | null {
+function maxBucket(bucket: Map<string, MetricBucket>, metric: string): TimelineBucket | null {
   const items = [...bucket.entries()];
   if (items.length === 0) {
     return null;
@@ -526,7 +557,7 @@ function maxBucket(bucket: Map<string, MetricBucket>, metric: string): Record<st
   return { key, ...value };
 }
 
-function maxMapping(values: Record<string, number>): { key: string; count: number } | null {
+function maxMapping(values: Record<string, number>): KeyCount | null {
   const entries = Object.entries(values);
   if (entries.length === 0) {
     return null;
@@ -566,7 +597,7 @@ function topMessages(messages: MessageWithStats[], limit = TOP_N): TopMessage[] 
     }));
 }
 
-function largestAssets(assets: AssetWithStats[], limit = TOP_N): Array<Record<string, unknown>> {
+function largestAssets(assets: AssetWithStats[], limit = TOP_N): LargestAsset[] {
   return assets
     .filter((asset) => asset.sizeBytes)
     .sort((left, right) => (right.sizeBytes || 0) - (left.sizeBytes || 0))
@@ -583,7 +614,7 @@ function largestAssets(assets: AssetWithStats[], limit = TOP_N): Array<Record<st
     }));
 }
 
-function firstConversation(items: ConversationAggregate[]): Record<string, unknown> | null {
+function firstConversation(items: ConversationAggregate[]): ConversationSummary | null {
   const dated = items.filter((item) => item.createdAt);
   if (dated.length === 0) {
     return null;
@@ -591,7 +622,7 @@ function firstConversation(items: ConversationAggregate[]): Record<string, unkno
   return conversationSummary(dated.reduce((best, item) => (item.createdAt! < best.createdAt! ? item : best)));
 }
 
-function lastConversation(items: ConversationAggregate[]): Record<string, unknown> | null {
+function lastConversation(items: ConversationAggregate[]): ConversationSummary | null {
   const dated = items.filter((item) => item.createdAt);
   if (dated.length === 0) {
     return null;
@@ -599,7 +630,7 @@ function lastConversation(items: ConversationAggregate[]): Record<string, unknow
   return conversationSummary(dated.reduce((best, item) => (item.createdAt! > best.createdAt! ? item : best)));
 }
 
-function conversationSummary(item: ConversationAggregate): Record<string, unknown> {
+function conversationSummary(item: ConversationAggregate): ConversationSummary {
   return {
     conversation_id: item.conversationId,
     title: item.title,
@@ -631,7 +662,7 @@ function distribution(values: number[]): Distribution {
   return buckets;
 }
 
-function assetCategory(asset: ParsedAsset): "image" | "voice" | "file" {
+function assetCategory(asset: ParsedAsset): AssetCategory {
   const mime = (asset.mimeType || "").toLowerCase();
   const suffixes = new Set([suffix(asset.fileExtension), suffix(asset.displayName), suffix(asset.localPath)].filter(Boolean));
   if (mime.startsWith("image/") || intersects(suffixes, ["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "heic"])) {
@@ -643,7 +674,7 @@ function assetCategory(asset: ParsedAsset): "image" | "voice" | "file" {
   return "file";
 }
 
-function dedupedAssetCounts(assets: AssetWithStats[]): Record<"image" | "voice" | "file", number> {
+function dedupedAssetCounts(assets: AssetWithStats[]): Record<AssetCategory, number> {
   const seen = { image: new Set<string>(), voice: new Set<string>(), file: new Set<string>() };
   assets.forEach((asset) => {
     if (asset.source === "library_file") {
@@ -684,7 +715,7 @@ function counter(values: Iterable<string>): Map<string, number> {
   return output;
 }
 
-function counterItems(values: Map<string, number>): Array<{ key: string; count: number }> {
+function counterItems(values: Map<string, number>): KeyCount[] {
   return [...values.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0])).map(([key, count]) => ({ key, count }));
 }
 

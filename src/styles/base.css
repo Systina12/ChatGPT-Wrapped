@@ -1,0 +1,133 @@
+:root {
+  color: #2d2341;
+  background: #f8f5fb;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --ink: #2d2341;
+  --muted: #746b83;
+  --line: #e6dfee;
+  --surface: #ffffff;
+  --soft: #f4effa;
+  --violet: #8b5cf6;
+  --violet-deep: #5b3a99;
+  --blue: #5f8ee8;
+  --mint: #63bda5;
+  --amber: #e2a04a;
+  --shadow: 0 18px 50px rgba(69, 44, 102, 0.09);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(213, 190, 246, 0.3), transparent 34rem),
+    linear-gradient(180deg, #fbf9fd 0%, #f8f5fb 100%);
+}
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  border: 1px solid #d7cee4;
+  border-radius: 12px;
+  padding: 0 14px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.88);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+button:hover:not(:disabled) {
+  border-color: #a98acb;
+  background: #ffffff;
+  box-shadow: 0 7px 18px rgba(72, 42, 110, 0.1);
+  transform: translateY(-1px);
+}
+
+button:focus-visible,
+summary:focus-visible {
+  outline: 3px solid rgba(139, 92, 246, 0.35);
+  outline-offset: 3px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.app-shell {
+  width: min(1220px, calc(100vw - 40px));
+  margin: 0 auto;
+  padding: 36px 0 70px;
+}
+
+.hero-band,
+.status-band,
+.panel,
+.spotlight-card,
+.quick-insights,
+.metric,
+.empty-state,
+.raw-details {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--shadow);
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 13px;
+  color: var(--violet-deep);
+  font-size: 0.73rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--ink);
+  letter-spacing: -0.035em;
+}
+
+h1 {
+  max-width: 740px;
+  margin-bottom: 17px;
+  font-size: clamp(2.6rem, 7vw, 6.3rem);
+  line-height: 0.92;
+}
+
+h2 {
+  margin-bottom: 0;
+  font-size: clamp(1.55rem, 3vw, 2.35rem);
+  line-height: 1.05;
+}
+
+h3 {
+  margin: 0;
+  font-size: 1.08rem;
+  line-height: 1.2;
+}
