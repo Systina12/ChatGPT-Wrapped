@@ -47,8 +47,3 @@ The app has no backend, analytics, account system, or upload endpoint. The selec
 - `docs/export-data-schema.md`: notes about official export files
 - `legacy/python/`: previous Python parser and tests, kept as a migration reference
 
-## Known limitations
-
-- Activity times use the timestamps stored in the export and are currently displayed as UTC-derived buckets.
-- The report does not upload or synchronize data between devices.
-- Real exports and generated output should remain under ignored paths such as `data/` or `workspace/`.
