@@ -1,13 +1,24 @@
 # ChatGPT-Wrapped
 
-Build a local ChatGPT Wrapped from official OpenAI ChatGPT exports.
+Build a personal ChatGPT report from an official OpenAI export — entirely in your browser.
 
-This project is now a pure frontend React app. The export is parsed in the browser, statistics are computed on the user's device, and no backend or upload service is required.
+ChatGPT-Wrapped reads the export locally, computes the statistics in a Web Worker, and presents a visual report without a backend or upload service. Your conversations stay on your device.
 
-## Run
+## What it shows
+
+- Conversation, message, character, asset, and date-span totals
+- Monthly message rhythm and hourly activity
+- Most-used assistant models
+- Language buckets and time-of-day patterns
+- Longest conversations and frequently repeated words
+- Parse warnings and the complete raw `WrappedData` JSON
+
+The generated report is available immediately in the page, and the normalized JSON can be downloaded for further analysis.
+
+## Run locally
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -16,23 +27,28 @@ Open the Vite URL, then choose either:
 - a ChatGPT export `.zip`
 - an extracted ChatGPT export folder
 
-The app generates a `WrappedData` JSON object with overview, timeline, activity, conversation, message, model, asset, language, frequent-word, quality, and highlight statistics.
-
 ## Build
 
 ```bash
+npm run typecheck
 npm run build
 ```
 
-## Project Structure
+## Privacy
+
+The app has no backend, analytics, account system, or upload endpoint. The selected files are passed to a local Web Worker for parsing and statistics. Nothing is sent to OpenAI or any other service.
+
+## Project structure
 
 - `src/lib/export/`: browser-side file loading and ChatGPT export parsing
 - `src/lib/stats/`: statistics builder for report-ready wrapped data
 - `src/workers/`: Web Worker entry for parsing and computation
 - `src/types/`: export and wrapped-data types
-- `docs/export-data-schema.md`: generic notes about official export files
+- `docs/export-data-schema.md`: notes about official export files
 - `legacy/python/`: previous Python parser and tests, kept as a migration reference
 
-## Local Data
+## Known limitations
 
-Keep real exports and generated output under ignored paths such as `data/` or `workspace/`.
+- Activity times use the timestamps stored in the export and are currently displayed as UTC-derived buckets.
+- The report does not upload or synchronize data between devices.
+- Real exports and generated output should remain under ignored paths such as `data/` or `workspace/`.
