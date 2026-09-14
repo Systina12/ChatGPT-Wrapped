@@ -1,4 +1,4 @@
-name: Deploy ChatGPT Wrapped
+# Pages is enabled from repository settings; deploy the Vite dist artifact.\nname: Deploy ChatGPT Wrapped
 
 on:
   push:
