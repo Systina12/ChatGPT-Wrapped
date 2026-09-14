@@ -1,5 +1,7 @@
 # ChatGPT-Wrapped
 
+**Live demo:** [systina12.github.io/ChatGPT-Wrapped](https://systina12.github.io/ChatGPT-Wrapped/)
+
 Build a personal ChatGPT report from an official OpenAI export — entirely in your browser.
 
 ChatGPT-Wrapped reads the export locally, computes the statistics in a Web Worker, and presents a visual report without a backend or upload service. Your conversations stay on your device.
