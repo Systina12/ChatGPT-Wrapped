@@ -52,3 +52,9 @@ Browser tests build and serve `/ChatGPT-Wrapped/`, using Chromium desktop and mo
 Unit tests use synthetic data, including 150,000 messages, corrupt/empty input, ZIP/folder limits, attachment merging, DST, branch cycles/missing nodes, filtering, comparison, schema validation, storage failure and share privacy. Browser checks cover real import/recalculation, cancellation/stale worker responses, persistence, downloads, keyboard focus and responsive layouts. GitHub Actions runs frontend checks on branches/PRs; Pages deploys only from `main`.
 
 Source archives must come from committed files (`git archive`), include newly added modules and tests, and exclude dependencies, caches, real exports and secrets. Archive SHA256 and the corresponding commit are recorded alongside each delivery.
+
+## Annual report presentation
+
+The first report screen is a cream/black/lime data overview. **Enter my annual report / 进入我的年度报告** opens seven pages in purple/lime, with live statistics rather than example numbers. Use previous/next buttons, chapter markers, left/right arrows, Page Up/Down, Home/End, or a horizontal swipe. Escape closes the report and returns focus to the opener. Vertical gestures scroll normally. The native modal contains focus; decorative and entrance animations respect `prefers-reduced-motion`.
+
+Complete statistics, warnings and JSON remain available from the report's utility buttons. The final page opens the share-card controls, retaining their default privacy settings. The locally generated card's own preview is independent of the report's page navigation.

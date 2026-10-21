@@ -11,6 +11,7 @@ from zipfile import ZipFile
 parser = argparse.ArgumentParser()
 parser.add_argument("output", type=Path)
 parser.add_argument("--commit", default="HEAD")
+parser.add_argument("--require-annual", action="store_true")
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 commit = subprocess.check_output(["git", "rev-parse", args.commit], cwd=root, text=True).strip()
@@ -18,6 +19,8 @@ excluded = ["legacy", "data", "node_modules", "dist", "test-results", "playwrigh
 command = ["git", "archive", "--format=zip", commit, "."] + [f":(exclude){path}" for path in excluded]
 content = subprocess.check_output(command, cwd=root)
 required = {"src/lib/report/engine.ts", "src/lib/report/restore.ts", "src/lib/report/storage.ts", "src/lib/report/i18n.tsx", "src/lib/report/share.ts", "src/lib/stats/scope.ts", "src/types/options.ts", "src/components/report/ReportControls.tsx", "src/components/report/ShareCard.tsx", "src/styles/features.css", "tests/data.test.ts", "tests/features.test.ts", "tests/import.spec.ts", "tests/features.spec.ts", "playwright.config.ts", ".github/workflows/checks.yml", "package-lock.json"}
+if args.require_annual:
+    required.update({"src/components/report/AnnualReport.tsx", "src/components/ui/CuriosityMark.tsx", "src/styles/annual.css", "tests/annual.spec.ts"})
 with ZipFile(io.BytesIO(content)) as archive:
     names = set(archive.namelist())
     missing = required - names

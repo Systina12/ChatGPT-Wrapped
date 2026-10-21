@@ -301,3 +301,16 @@ describe("sharing privacy", () => {
     expect(escapeXml("a\ud800b")).toBe("ab");
   });
 });
+
+it("validates complete table counts and distinct calendar key formats", async () => {
+  const data = buildReport(await fixture());
+  const missing = structuredClone(data);
+  delete missing.meta.table_counts.messages;
+  expect(() => restoreReport(missing)).toThrow(/Invalid/);
+  const month = structuredClone(data);
+  month.timeline.months[0].key = "2024-13";
+  expect(() => restoreReport(month)).toThrow(/Invalid/);
+  const day = structuredClone(data);
+  day.timeline.days[0].key = "2024-03";
+  expect(() => restoreReport(day)).toThrow(/Invalid/);
+});

@@ -7,6 +7,8 @@ import type {
 } from "../../types/wrapped";
 import { useI18n } from "../../lib/report/i18n";
 import { ShareCard } from "./ShareCard";
+import { CuriosityMark } from "../ui/CuriosityMark";
+import { AnnualReport, type ReportDestination } from "./AnnualReport";
 export function Metrics({ data }: { data: WrappedData }) {
   const { t, number } = useI18n();
   const metrics: [string, number, string][] = [
@@ -120,6 +122,25 @@ function Counts({
 }
 export function Report({ data }: { data: WrappedData }) {
   const { t, number, date } = useI18n();
+  const [storyOpen, setStoryOpen] = useState(false);
+  function explore(destination: ReportDestination) {
+    setStoryOpen(false);
+    const ids = {
+      statistics: "full-statistics",
+      warnings: "report-warnings",
+      json: "report-json",
+      share: "report-share",
+    };
+    const target = document.getElementById(ids[destination]);
+    if (target instanceof HTMLDetailsElement) target.open = true;
+    if (destination === "json") setRawOpen(true);
+    requestAnimationFrame(() => {
+      target?.scrollIntoView({ block: "start" });
+      (target?.querySelector("summary,button") as HTMLElement | null)?.focus({
+        preventScroll: true,
+      });
+    });
+  }
   const [rawOpen, setRawOpen] = useState(false),
     [monthPage, setMonthPage] = useState(0),
     [rankMetric, setRankMetric] = useState<
@@ -160,7 +181,51 @@ export function Report({ data }: { data: WrappedData }) {
           {date(data.overview.last_seen_at, zone)} · {zone}
         </p>
       </header>
+      <section
+        className="overview-gateway"
+        aria-label={t("年度回顾总览", "Year in review overview")}
+      >
+        <div className="gateway-copy">
+          <p className="eyebrow">
+            A MIND IN MOTION /{" "}
+            {data.options?.year === "all"
+              ? "ALL YEARS"
+              : data.options?.year === "custom"
+                ? "YOUR OWN TIMELINE"
+                : data.options?.year}
+          </p>
+          <h2>{t("这是你的好奇心。", "This is your curiosity.")}</h2>
+          <p>
+            {t(
+              "用一个个问题，拼出你的探索轨迹。",
+              "One question at a time. A world of your own.",
+            )}
+          </p>
+          <button className="enter-report" onClick={() => setStoryOpen(true)}>
+            {t("进入我的年度报告", "Enter my annual report")}
+            <span aria-hidden="true">↗</span>
+          </button>
+        </div>
+        <div className="gateway-art" aria-hidden="true">
+          <span>
+            <CuriosityMark />
+          </span>
+          <div />
+          <b>
+            {data.options?.year && /^\d{4}$/.test(data.options.year)
+              ? data.options.year
+              : "YOU × AI"}
+          </b>
+        </div>
+      </section>
       <Metrics data={data} />
+      {storyOpen && (
+        <AnnualReport
+          data={data}
+          onClose={() => setStoryOpen(false)}
+          onExplore={explore}
+        />
+      )}
       <div className="insights-row">
         <p>
           {t("最长连续使用", "Longest streak")}{" "}
@@ -208,6 +273,7 @@ export function Report({ data }: { data: WrappedData }) {
         </section>
       )}
       <details
+        id="report-warnings"
         className="feature-panel warning-panel"
         open={warnings.length > 0}
       >
@@ -468,8 +534,11 @@ export function Report({ data }: { data: WrappedData }) {
           </section>
         </div>
       </details>
-      <ShareCard data={data} />
+      <div id="report-share">
+        <ShareCard data={data} />
+      </div>
       <details
+        id="report-json"
         className="raw-details"
         onToggle={(event) => setRawOpen(event.currentTarget.open)}
       >

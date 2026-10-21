@@ -183,3 +183,67 @@ test("cancel and replacement isolate late worker responses", async ({
   await page.waitForTimeout(1100);
   await expect(page.getByTestId("metric-messages")).toHaveText("777");
 });
+
+test("recalculation ignores old responses from the same worker", async ({
+  page,
+}) => {
+  const original = await sampleReport();
+  const filtered = structuredClone(original);
+  filtered.meta.table_counts.messages = 123;
+  await page.evaluate(
+    ({ original, filtered }) => {
+      (window as unknown as { Worker: unknown }).Worker = class {
+        onmessage: ((event: unknown) => void) | null = null;
+        onerror = null;
+        oldId = 0;
+        postMessage(request: { id: number; type: string }) {
+          if (request.type === "import") {
+            this.oldId = request.id;
+            setTimeout(
+              () =>
+                this.onmessage?.({
+                  data: { id: request.id, type: "done", data: original },
+                }),
+              20,
+            );
+          } else {
+            setTimeout(
+              () =>
+                this.onmessage?.({
+                  data: { id: request.id, type: "done", data: filtered },
+                }),
+              20,
+            );
+            setTimeout(
+              () =>
+                this.onmessage?.({
+                  data: {
+                    id: this.oldId,
+                    type: "progress",
+                    progress: { phase: "parsing", completed: 1, total: 2 },
+                  },
+                }),
+              100,
+            );
+            setTimeout(
+              () =>
+                this.onmessage?.({
+                  data: { id: this.oldId, type: "done", data: original },
+                }),
+              200,
+            );
+          }
+        }
+        terminate() {}
+      };
+    },
+    { original, filtered },
+  );
+  await importZip(page);
+  await ready(page);
+  await page.getByText("Scope & timezone", { exact: true }).click();
+  await page.getByRole("button", { name: "Recalculate", exact: true }).click();
+  await ready(page);
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId("metric-messages")).toHaveText("123");
+});

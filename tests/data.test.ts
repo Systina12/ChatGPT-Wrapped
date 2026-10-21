@@ -252,3 +252,35 @@ describe("attachment merging", () => {
     expect(merged[0].width).toBe(100);
   });
 });
+
+it("recognizes an audio pointer directly on message content", async () => {
+  const c = conversation();
+  const raw = c.mapping.root.message as unknown as Record<string, unknown>;
+  raw.content = { content_type: "audio", audio_asset_pointer: "opaque-audio" };
+  const report = buildReport(
+    await parseExportEntries([jsonEntry("conversations.json", [c])]),
+  );
+  expect(report.overview.voice_count).toBe(1);
+  expect(report.assets.by_category.voice).toBe(1);
+});
+it("keeps same-ID messages and their attachments isolated across conversations", async () => {
+  const first = conversation("one", Date.parse("2023-01-01T12:00Z") / 1000),
+    second = conversation("two", Date.parse("2024-02-01T12:00Z") / 1000);
+  for (const c of [first, second]) {
+    c.mapping.root.message.id = "shared-id";
+    c.mapping.root.message.metadata = {
+      attachments: [
+        { asset_pointer: "same-image.png", mime_type: "image/png" },
+      ],
+    } as never;
+  }
+  const report = buildReport(
+    await parseExportEntries([
+      jsonEntry("conversations.json", [first, second]),
+    ]),
+  );
+  expect(report.meta.table_counts.messages).toBe(4);
+  expect(report.assets.total_count).toBe(2);
+  expect(report.assets.monthly["2023-01"].image).toBe(1);
+  expect(report.assets.monthly["2024-02"].image).toBe(1);
+});
