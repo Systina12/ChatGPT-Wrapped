@@ -1,129 +1,99 @@
 import type { DateRange, DayPeriod } from "../../types/wrapped";
 
 export function toDate(value: unknown): Date | null {
-  if (value === null || value === undefined) {
-    return null;
+  if (value === null || value === undefined || value === "") return null;
+  const date =
+    typeof value === "number" && Number.isFinite(value)
+      ? new Date(value * 1000)
+      : typeof value === "string"
+        ? new Date(value)
+        : null;
+  return date &&
+    Number.isFinite(date.getTime()) &&
+    date.getUTCFullYear() >= 1 &&
+    date.getUTCFullYear() <= 9999
+    ? date
+    : null;
+}
+const formatters = new Map<string, Intl.DateTimeFormat>();
+/** UTC fields represent the selected zone's calendar, not a new instant. */
+export function calendarDate(date: Date, timezone = "UTC"): Date {
+  if (timezone === "UTC") return date;
+  let formatter = formatters.get(timezone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+    formatters.set(timezone, formatter);
   }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return new Date(value * 1000);
-  }
-  if (typeof value === "string") {
-    const text = value.trim();
-    if (!text) {
-      return null;
+  const parts: Record<string, string> = {};
+  for (const part of formatter.formatToParts(date))
+    if (part.type !== "literal") parts[part.type] = part.value;
+  return new Date(
+    `${parts.year.padStart(4, "0")}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}Z`,
+  );
+}
+export const isoOrNull = (date: Date | null | undefined): string | null =>
+  date ? date.toISOString() : null;
+export const yearKey = (date: Date): string =>
+  String(date.getUTCFullYear()).padStart(4, "0");
+export const monthKey = (date: Date): string =>
+  `${yearKey(date)}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+export const dayKey = (date: Date): string => date.toISOString().slice(0, 10);
+export const hourKey = (date: Date): string =>
+  String(date.getUTCHours()).padStart(2, "0");
+export const weekdayKey = (date: Date): string =>
+  String((date.getUTCDay() + 6) % 7);
+export function dayPeriod(date: Date): DayPeriod {
+  const hour = date.getUTCHours();
+  return hour < 6
+    ? "late_night"
+    : hour < 12
+      ? "morning"
+      : hour < 18
+        ? "afternoon"
+        : "evening";
+}
+export function isCalendarDay(value: string): boolean {
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    !!toDate(value) &&
+    dayKey(toDate(value)!) === value
+  );
+}
+export const dayOrdinal = (key: string): number =>
+  new Date(`${key}T00:00:00Z`).getTime() / 86_400_000;
+export function longestStreak(keys: Iterable<string>): DateRange {
+  const days = [...new Set(keys)].filter(isCalendarDay).sort();
+  let best: DateRange = { days: 0, start: null, end: null };
+  let start = "",
+    previous = "",
+    length = 0;
+  for (const day of days) {
+    if (previous && dayOrdinal(day) - dayOrdinal(previous) === 1) length++;
+    else {
+      start = day;
+      length = 1;
     }
-    const date = new Date(text);
-    return Number.isNaN(date.getTime()) ? null : date;
+    if (length > best.days) best = { days: length, start, end: day };
+    previous = day;
   }
-  return null;
+  return best;
 }
-
-export function isoOrNull(value: Date | null | undefined): string | null {
-  return value ? value.toISOString() : null;
-}
-
-export function yearKey(value: Date): string {
-  return String(value.getUTCFullYear()).padStart(4, "0");
-}
-
-export function monthKey(value: Date): string {
-  return `${yearKey(value)}-${String(value.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-export function dayKey(value: Date): string {
-  return value.toISOString().slice(0, 10);
-}
-
-export function hourKey(value: Date): string {
-  return String(value.getUTCHours()).padStart(2, "0");
-}
-
-export function weekdayKey(value: Date): string {
-  const day = value.getUTCDay();
-  return String(day === 0 ? 6 : day - 1);
-}
-
-export function dayPeriod(value: Date): DayPeriod {
-  const hour = value.getUTCHours();
-  if (hour < 6) return "late_night";
-  if (hour < 12) return "morning";
-  if (hour < 18) return "afternoon";
-  return "evening";
-}
-
-export function longestStreak(dayKeys: Iterable<string>): DateRange {
-  const dates = [...new Set(dayKeys)].map(parseDay).filter(isDate).sort((left, right) => left.getTime() - right.getTime());
-  if (dates.length === 0) {
-    return { days: 0, start: null, end: null };
+export function longestGap(keys: Iterable<string>): DateRange {
+  const days = [...new Set(keys)].filter(isCalendarDay).sort();
+  let best: DateRange = { days: 0, start: null, end: null };
+  for (let i = 1; i < days.length; i++) {
+    const length = dayOrdinal(days[i]) - dayOrdinal(days[i - 1]) - 1;
+    if (length > best.days)
+      best = { days: length, start: days[i - 1], end: days[i] };
   }
-
-  let bestStart = dates[0];
-  let bestEnd = dates[0];
-  let currentStart = dates[0];
-  let currentEnd = dates[0];
-
-  dates.slice(1).forEach((date) => {
-    if (daysBetween(currentEnd, date) === 1) {
-      currentEnd = date;
-    } else {
-      if (daysBetween(currentStart, currentEnd) > daysBetween(bestStart, bestEnd)) {
-        bestStart = currentStart;
-        bestEnd = currentEnd;
-      }
-      currentStart = date;
-      currentEnd = date;
-    }
-  });
-
-  if (daysBetween(currentStart, currentEnd) > daysBetween(bestStart, bestEnd)) {
-    bestStart = currentStart;
-    bestEnd = currentEnd;
-  }
-
-  return {
-    days: daysBetween(bestStart, bestEnd) + 1,
-    start: dayKey(bestStart),
-    end: dayKey(bestEnd),
-  };
-}
-
-export function longestGap(dayKeys: Iterable<string>): DateRange {
-  const dates = [...new Set(dayKeys)].map(parseDay).filter(isDate).sort((left, right) => left.getTime() - right.getTime());
-  if (dates.length < 2) {
-    return { days: 0, start: null, end: null };
-  }
-
-  let bestStart = dates[0];
-  let bestEnd = dates[1];
-  let bestDays = daysBetween(bestStart, bestEnd) - 1;
-
-  for (let index = 0; index < dates.length - 1; index += 1) {
-    const left = dates[index];
-    const right = dates[index + 1];
-    const gapDays = daysBetween(left, right) - 1;
-    if (gapDays > bestDays) {
-      bestStart = left;
-      bestEnd = right;
-      bestDays = gapDays;
-    }
-  }
-
-  return {
-    days: Math.max(bestDays, 0),
-    start: dayKey(bestStart),
-    end: dayKey(bestEnd),
-  };
-}
-
-function parseDay(value: string): Date | null {
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function isDate(value: Date | null): value is Date {
-  return value !== null;
-}
-
-function daysBetween(left: Date, right: Date): number {
-  return Math.round((right.getTime() - left.getTime()) / 86_400_000);
+  return best;
 }

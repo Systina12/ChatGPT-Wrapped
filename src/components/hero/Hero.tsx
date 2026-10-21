@@ -1,32 +1,41 @@
-import { ShieldCheck, Sparkles } from "lucide-react";
-
+import { useI18n } from "../../lib/report/i18n";
 export function Hero() {
+  const { t } = useI18n();
   return (
     <header className="hero-band">
       <div className="hero-copy">
-        <p className="eyebrow">
-          <Sparkles size={15} /> ChatGPT Wrapped
-        </p>
-        <h1>Meet your ChatGPT year.</h1>
+        <p className="eyebrow">A YEAR OF CURIOSITY</p>
+        <h1>
+          {t("每个问题，\n都有回响。", "Every question.\nA new possibility.")}
+        </h1>
         <p className="lede">
-          Turn an official ChatGPT export into a quiet, personal report about what you asked, when you showed up, and
-          how your conversations grew.
+          {t(
+            "从一次对话，到一个更大的自己。导入 ChatGPT 导出文件，看见你的探索轨迹。",
+            "From one conversation to a bigger world. Turn your ChatGPT export into a story of curiosity.",
+          )}
         </p>
         <div className="privacy-pill">
-          <ShieldCheck size={16} />
-          <span>Local by design — your export never leaves this device.</span>
+          {t(
+            "本地读取 · 无需账号 · 聊天记录不会上传",
+            "Read locally · No account · Your conversations stay here",
+          )}
         </div>
       </div>
-      <div className="hero-poster" aria-label="Privacy promise">
+      <div className="hero-poster" aria-hidden="true">
+        <span className="poster-kicker">YOUR MIND, IN MOTION</span>
         <div className="poster-orbit poster-orbit-one" />
         <div className="poster-orbit poster-orbit-two" />
-        <span className="poster-kicker">A personal archive</span>
         <strong>
-          Make the invisible
-          <br />
-          patterns visible.
+          YOU
+          <br />× AI
+          <br />↗
         </strong>
-        <small>No account. No upload. No backend.</small>
+        <small>
+          {t(
+            "把日常的好奇，变成看得见的轨迹。",
+            "An archive of your everyday curiosity.",
+          )}
+        </small>
       </div>
     </header>
   );

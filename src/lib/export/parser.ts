@@ -14,10 +14,14 @@ import type {
   ParseWarning,
   SourceFile,
 } from "../../types/export";
-import { readJsonEntry } from "./fileInput";
+import { mergeAssets } from "./assets";
+import { readJsonEntry, type ImportProgress } from "./fileInput";
 
-export async function parseExportEntries(entries: ExportEntry[]): Promise<ParsedExport> {
-  const parser = new ExportParser(entries);
+export async function parseExportEntries(
+  entries: ExportEntry[],
+  onProgress?: (progress: ImportProgress) => void,
+): Promise<ParsedExport> {
+  const parser = new ExportParser(entries, onProgress);
   return parser.parse();
 }
 
@@ -39,8 +43,14 @@ class ExportParser {
   private readonly metadata: Record<string, unknown> = {};
   private rowId = 1;
 
-  constructor(entries: ExportEntry[]) {
-    this.entries = [...entries].sort((left, right) => left.path.localeCompare(right.path));
+  private completed = 0;
+  constructor(
+    entries: ExportEntry[],
+    private readonly onProgress?: (progress: ImportProgress) => void,
+  ) {
+    this.entries = [...entries].sort((left, right) =>
+      left.path.localeCompare(right.path),
+    );
   }
 
   async parse(): Promise<ParsedExport> {
@@ -59,7 +69,7 @@ class ExportParser {
       metadata: this.metadata,
       conversations: this.conversations,
       messages: [...this.messages.values()],
-      assets: this.assets,
+      assets: mergeAssets(this.assets),
       assetNameMap: Object.fromEntries(this.assetNames),
       libraryFiles: this.libraryFiles,
       feedback: this.feedback,
@@ -79,17 +89,25 @@ class ExportParser {
   }
 
   private async parseAssetNameMap(): Promise<void> {
-    const data = await this.loadOptionalJson("conversation_asset_file_names.json");
+    const data = await this.loadOptionalJson(
+      "conversation_asset_file_names.json",
+    );
     if (data === undefined) {
       return;
     }
     if (!isObject(data)) {
-      this.warn("invalid_asset_name_map", "conversation_asset_file_names.json is not an object");
+      this.warn(
+        "invalid_asset_name_map",
+        "conversation_asset_file_names.json is not an object",
+      );
       return;
     }
 
     Object.entries(data).forEach(([localPath, displayName]) => {
-      const display = typeof displayName === "string" ? displayName : JSON.stringify(displayName);
+      const display =
+        typeof displayName === "string"
+          ? displayName
+          : JSON.stringify(displayName);
       this.assetNames.set(localPath, display);
     });
   }
@@ -106,7 +124,10 @@ class ExportParser {
 
     data.forEach((item, index) => {
       if (!isObject(item)) {
-        this.warn("invalid_library_file", `library_files[${index}] is not an object`);
+        this.warn(
+          "invalid_library_file",
+          `library_files[${index}] is not an object`,
+        );
         return;
       }
       const id = asStr(item.id) || `library-index-${index}`;
@@ -158,19 +179,30 @@ class ExportParser {
   private async parseConversations(): Promise<void> {
     const files = this.conversationFiles();
     if (files.length === 0) {
-      this.warn("missing_conversations", "no conversations.json or conversations-*.json found");
-      return;
+      throw new Error("Missing conversations.json / 缺少 conversations 主文件");
     }
 
+    let validFiles = 0;
     for (const file of files) {
       const data = await this.loadJson(file);
       if (!Array.isArray(data)) {
         this.warn("invalid_conversation_file", `${file.name} is not an array`);
         continue;
       }
+      if (data.length && !data.some(isValidConversation)) {
+        this.warn(
+          "invalid_conversation_file",
+          `${file.name}: no usable conversations`,
+        );
+        continue;
+      }
+      validFiles++;
       data.forEach((conversation, index) => {
-        if (!isObject(conversation)) {
-          this.warn("invalid_conversation", `${file.name}[${index}] is not an object`);
+        if (!isValidConversation(conversation)) {
+          this.warn(
+            "invalid_conversation",
+            `${file.name}[${index}] is not an object`,
+          );
           return;
         }
         const fallbackId = `${file.name.replace(/\.json$/, "")}:${index}`;
@@ -178,6 +210,10 @@ class ExportParser {
         this.insertConversationMessages(conversation, fallbackId);
       });
     }
+    if (!validFiles)
+      throw new Error(
+        "All conversation files are damaged or invalid / conversations 主文件全部损坏或无效",
+      );
   }
 
   private async parseGroupChats(): Promise<void> {
@@ -190,13 +226,19 @@ class ExportParser {
       return;
     }
     if (!Array.isArray(data.chats)) {
-      this.warn("invalid_group_chats", "group_chats.json does not contain a chats array");
+      this.warn(
+        "invalid_group_chats",
+        "group_chats.json does not contain a chats array",
+      );
       return;
     }
 
     data.chats.forEach((chat, index) => {
       if (!isObject(chat)) {
-        this.warn("invalid_group_chat", `group_chats.chats[${index}] is not an object`);
+        this.warn(
+          "invalid_group_chat",
+          `group_chats.chats[${index}] is not an object`,
+        );
         return;
       }
       const chatId = asStr(chat.id) || `group-chat-${index}`;
@@ -252,7 +294,10 @@ class ExportParser {
 
     data.forEach((item, index) => {
       if (!isObject(item)) {
-        this.warn("invalid_feedback", `message_feedback[${index}] is not an object`);
+        this.warn(
+          "invalid_feedback",
+          `message_feedback[${index}] is not an object`,
+        );
         return;
       }
       this.feedback.push({
@@ -279,7 +324,10 @@ class ExportParser {
 
     data.forEach((item, index) => {
       if (!isObject(item)) {
-        this.warn("invalid_share", `shared_conversations[${index}] is not an object`);
+        this.warn(
+          "invalid_share",
+          `shared_conversations[${index}] is not an object`,
+        );
         return;
       }
       const conversationId = asStr(item.conversation_id);
@@ -294,7 +342,9 @@ class ExportParser {
       });
       if (conversationId) {
         this.conversations
-          .filter((conversation) => conversation.conversationId === conversationId)
+          .filter(
+            (conversation) => conversation.conversationId === conversationId,
+          )
           .forEach((conversation) => {
             conversation.isShared = true;
           });
@@ -329,7 +379,10 @@ class ExportParser {
     const records = Array.isArray(data) ? data : [data];
     records.forEach((item, index) => {
       if (!isObject(item)) {
-        this.warn("invalid_settings", `user_settings[${index}] is not an object`);
+        this.warn(
+          "invalid_settings",
+          `user_settings[${index}] is not an object`,
+        );
         return;
       }
       this.settings.push({
@@ -340,7 +393,10 @@ class ExportParser {
     });
   }
 
-  private insertConversation(conversation: JsonObject, fallbackId: string): void {
+  private insertConversation(
+    conversation: JsonObject,
+    fallbackId: string,
+  ): void {
     const conversationId = conversationIdFor(conversation, fallbackId);
     this.conversations.push({
       rowId: this.rowId++,
@@ -355,18 +411,26 @@ class ExportParser {
       defaultModelSlug: asStr(conversation.default_model_slug),
       isArchived: asBool(conversation.is_archived),
       isStarred: asBool(conversation.is_starred),
-      isShared: this.conversations.some((item) => item.conversationId === conversationId && item.isShared),
+      isShared: this.conversations.some(
+        (item) => item.conversationId === conversationId && item.isShared,
+      ),
       raw: conversation,
     });
   }
 
-  private insertConversationMessages(conversation: JsonObject, fallbackId: string): void {
+  private insertConversationMessages(
+    conversation: JsonObject,
+    fallbackId: string,
+  ): void {
     const conversationId = conversationIdFor(conversation, fallbackId);
     if (conversation.mapping === undefined) {
       return;
     }
     if (!isObject(conversation.mapping)) {
-      this.warn("invalid_mapping", `conversation ${conversationId} mapping is not an object`);
+      this.warn(
+        "invalid_mapping",
+        `conversation ${conversationId} mapping is not an object`,
+      );
       return;
     }
 
@@ -380,11 +444,11 @@ class ExportParser {
       const author = isObject(message.author) ? message.author : {};
       const messageId = asStr(message.id) || asStr(node.id) || nodeId;
 
-      this.messages.set(messageId, {
+      this.messages.set(`${conversationId}\0${messageId}`, {
         messageId,
         conversationId,
         source: "conversation",
-        nodeId: asStr(node.id) || nodeId,
+        nodeId,
         parentNodeId: asStr(node.parent),
         role: asStr(author.role),
         authorName: asStr(author.name),
@@ -401,9 +465,13 @@ class ExportParser {
     });
   }
 
-  private insertGroupMessage(chatId: string, message: JsonObject, messageIndex: number): void {
+  private insertGroupMessage(
+    chatId: string,
+    message: JsonObject,
+    messageIndex: number,
+  ): void {
     const messageId = asStr(message.id) || `${chatId}-message-${messageIndex}`;
-    this.messages.set(messageId, {
+    this.messages.set(`${chatId}\0${messageId}`, {
       messageId,
       conversationId: chatId,
       source: "group_chat",
@@ -436,10 +504,22 @@ class ExportParser {
     content: JsonObject,
     metadata: JsonObject,
   ): void {
+    // Audio/image exports may put the pointer on content itself, or in nested audio data.
+    this.insertPartAsset(conversationId, messageId, content);
+    for (const key of ["audio", "input_audio", "output_audio"]) {
+      if (isObject(content[key]))
+        this.insertPartAsset(conversationId, messageId, {
+          ...content[key],
+          content_type: "audio",
+        });
+    }
     if (Array.isArray(content.parts)) {
       content.parts.forEach((part) => {
         if (isObject(part)) {
-          this.insertPartAsset(conversationId, messageId, part);
+          this.insertPartAsset(conversationId, messageId, {
+            ...part,
+            content_type: part.content_type || content.content_type,
+          });
         }
       });
     }
@@ -453,8 +533,16 @@ class ExportParser {
     }
   }
 
-  private insertPartAsset(conversationId: string, messageId: string, part: JsonObject): void {
-    ["asset_pointer", "audio_asset_pointer", "video_container_asset_pointer"].forEach((key) => {
+  private insertPartAsset(
+    conversationId: string,
+    messageId: string,
+    part: JsonObject,
+  ): void {
+    [
+      "asset_pointer",
+      "audio_asset_pointer",
+      "video_container_asset_pointer",
+    ].forEach((key) => {
       const localPath = asStr(part[key]);
       if (!localPath) {
         return;
@@ -465,14 +553,24 @@ class ExportParser {
         source: "message_part",
         localPath,
         displayName,
-        mimeType: libraryValue(library, "mime_type") || guessMime(localPath),
+        mimeType:
+          asStr(part.mime_type) ||
+          libraryValue(library, "mime_type") ||
+          guessMime(localPath),
         fileExtension: libraryValue(library, "file_extension"),
-        sizeBytes: asInt(part.size_bytes) || libraryInt(library, "file_size_bytes"),
+        sizeBytes:
+          asInt(part.size_bytes) || libraryInt(library, "file_size_bytes"),
         width: asInt(part.width),
         height: asInt(part.height),
         conversationId,
         messageId,
-        raw: part,
+        raw: {
+          ...part,
+          content_type:
+            key === "audio_asset_pointer"
+              ? "audio"
+              : part.content_type || contentTypeForPart(part),
+        },
       });
     });
 
@@ -499,7 +597,11 @@ class ExportParser {
     }
   }
 
-  private insertAttachmentAsset(conversationId: string, messageId: string, attachment: JsonObject): void {
+  private insertAttachmentAsset(
+    conversationId: string,
+    messageId: string,
+    attachment: JsonObject,
+  ): void {
     const localPath =
       asStr(attachment.asset_pointer) ||
       asStr(attachment.file_id) ||
@@ -519,11 +621,13 @@ class ExportParser {
       source: "attachment",
       localPath,
       displayName,
-      mimeType: asStr(attachment.mime_type) || libraryValue(library, "mime_type"),
+      mimeType:
+        asStr(attachment.mime_type) || libraryValue(library, "mime_type"),
       fileExtension: libraryValue(library, "file_extension"),
-      sizeBytes: asInt(attachment.size_bytes) || libraryInt(library, "file_size_bytes"),
-      width: null,
-      height: null,
+      sizeBytes:
+        asInt(attachment.size_bytes) || libraryInt(library, "file_size_bytes"),
+      width: asInt(attachment.width),
+      height: asInt(attachment.height),
       conversationId,
       messageId,
       raw: attachment,
@@ -537,7 +641,10 @@ class ExportParser {
     this.assets.push(asset);
   }
 
-  private libraryForAsset(localPath: string, displayName: string | null): JsonObject | null {
+  private libraryForAsset(
+    localPath: string,
+    displayName: string | null,
+  ): JsonObject | null {
     return (
       this.libraryByFileName.get(localPath) ||
       this.libraryByFileId.get(localPath) ||
@@ -548,7 +655,11 @@ class ExportParser {
 
   private conversationFiles(): ExportEntry[] {
     return this.entries
-      .filter((entry) => entry.name === "conversations.json" || /^conversations-\d+\.json$/.test(entry.name))
+      .filter(
+        (entry) =>
+          entry.name === "conversations.json" ||
+          /^conversations-\d+\.json$/.test(entry.name),
+      )
       .sort((left, right) => {
         if (left.name === "conversations.json") {
           return -1;
@@ -570,9 +681,17 @@ class ExportParser {
 
   private async loadJson(entry: ExportEntry): Promise<unknown> {
     try {
+      this.onProgress?.({
+        phase: "parsing",
+        completed: ++this.completed,
+        total: this.entries.filter((e) => e.name.endsWith(".json")).length,
+      });
       return await readJsonEntry(entry);
     } catch (error) {
-      this.warn("invalid_json", `${entry.name}: ${error instanceof Error ? error.message : String(error)}`);
+      this.warn(
+        "invalid_json",
+        `${entry.name}: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return undefined;
     }
   }
@@ -590,8 +709,13 @@ function sourceFileFromEntry(entry: ExportEntry): SourceFile {
   };
 }
 
-function conversationIdFor(conversation: JsonObject, fallbackId: string): string {
-  return asStr(conversation.conversation_id) || asStr(conversation.id) || fallbackId;
+function conversationIdFor(
+  conversation: JsonObject,
+  fallbackId: string,
+): string {
+  return (
+    asStr(conversation.conversation_id) || asStr(conversation.id) || fallbackId
+  );
 }
 
 function extractText(content: JsonObject): string | null {
@@ -625,7 +749,8 @@ function classifyFile(name: string): string {
   if (name === "group_chats.json") return "group_chats";
   if (name === "user.json") return "user";
   if (name === "user_settings.json") return "settings";
-  if (name === "conversations.json" || /^conversations-\d+\.json$/.test(name)) return "conversations";
+  if (name === "conversations.json" || /^conversations-\d+\.json$/.test(name))
+    return "conversations";
   if (name.endsWith(".dat")) return "asset";
   return "unknown";
 }
@@ -700,4 +825,18 @@ function asInt(value: unknown): number | null {
 
 function asBool(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
+}
+
+function contentTypeForPart(part: JsonObject): unknown {
+  return part.content_type || (part.audio_asset_pointer ? "audio" : undefined);
+}
+
+function isValidConversation(value: unknown): value is JsonObject {
+  return (
+    isObject(value) &&
+    (isObject(value.mapping) ||
+      (value.mapping === undefined &&
+        (typeof value.id === "string" ||
+          typeof value.conversation_id === "string")))
+  );
 }

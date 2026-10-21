@@ -235,3 +235,9 @@ pnpm-debug.log*
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local verification output and source archives
+test-results/
+playwright-report/
+*.zip
+.env.*

@@ -4,24 +4,85 @@ const CJK_RE = /[\u3400-\u4dbf\u4e00-\u9fff]+/g;
 const DIGIT_RE = /\d/g;
 
 const EN_STOPWORDS = new Set([
-  "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
-  "has", "have", "i", "in", "is", "it", "of", "on", "or", "that",
-  "the", "this", "to", "was", "were", "with", "you", "your",
-  "class", "com", "const", "data", "div", "false", "function", "html",
-  "http", "https", "id", "img", "info", "let", "name", "null", "span",
-  "string", "true", "type", "var", "www",
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "by",
+  "for",
+  "from",
+  "has",
+  "have",
+  "i",
+  "in",
+  "is",
+  "it",
+  "of",
+  "on",
+  "or",
+  "that",
+  "the",
+  "this",
+  "to",
+  "was",
+  "were",
+  "with",
+  "you",
+  "your",
+  "class",
+  "com",
+  "const",
+  "data",
+  "div",
+  "false",
+  "function",
+  "html",
+  "http",
+  "https",
+  "id",
+  "img",
+  "info",
+  "let",
+  "name",
+  "null",
+  "span",
+  "string",
+  "true",
+  "type",
+  "var",
+  "www",
 ]);
 
 const CJK_STOP_BIGRAMS = new Set([
-  "这个", "那个", "什么", "一下", "一个", "可以", "就是", "如果",
-  "但是", "然后", "所以", "因为", "我们", "你们", "他们", "它们",
+  "这个",
+  "那个",
+  "什么",
+  "一下",
+  "一个",
+  "可以",
+  "就是",
+  "如果",
+  "但是",
+  "然后",
+  "所以",
+  "因为",
+  "我们",
+  "你们",
+  "他们",
+  "它们",
 ]);
 
 export function visibleCharCount(text: string | null | undefined): number {
   return text ? text.replace(/\s+/g, "").length : 0;
 }
 
-export function excerpt(text: string | null | undefined, limit = 240): string | null {
+export function excerpt(
+  text: string | null | undefined,
+  limit = 240,
+): string | null {
   if (!text) {
     return null;
   }
@@ -45,7 +106,9 @@ export function codeBlockCount(text: string | null | undefined): number {
   return fenced + inlineLike;
 }
 
-export function punctuationCounts(text: string | null | undefined): Record<string, number> {
+export function punctuationCounts(
+  text: string | null | undefined,
+): Record<string, number> {
   if (!text) {
     return { question_marks: 0, exclamation_marks: 0 };
   }
@@ -55,12 +118,17 @@ export function punctuationCounts(text: string | null | undefined): Record<strin
   };
 }
 
-export function languageCounts(text: string | null | undefined): Record<string, number> {
+export function languageCounts(
+  text: string | null | undefined,
+): Record<string, number> {
   if (!text) {
     return { chinese_characters: 0, english_words: 0, digit_characters: 0 };
   }
   return {
-    chinese_characters: [...text.matchAll(CJK_RE)].reduce((total, match) => total + match[0].length, 0),
+    chinese_characters: [...text.matchAll(CJK_RE)].reduce(
+      (total, match) => total + match[0].length,
+      0,
+    ),
     english_words: [...text.matchAll(EN_WORD_RE)].length,
     digit_characters: [...text.matchAll(DIGIT_RE)].length,
   };
@@ -76,17 +144,22 @@ export function languageBucket(text: string | null | undefined): string {
   return "other";
 }
 
-export function frequentTerms(texts: Iterable<string | null | undefined>, limit = 50): Array<{ term: string; count: number }> {
+export function frequentTerms(
+  texts: Iterable<string | null | undefined>,
+  limit = 50,
+): Array<{ term: string; count: number }> {
   const counter = new Map<string, number>();
   for (const text of texts) {
     if (!text) {
       continue;
     }
     englishTerms(text).forEach((term) => increment(counter, term));
-    cjkBigrams(text).forEach((term) => increment(counter, term));
+    chineseTerms(text).forEach((term) => increment(counter, term));
   }
   return [...counter.entries()]
-    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .sort(
+      (left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
+    )
     .slice(0, limit)
     .map(([term, count]) => ({ term, count }));
 }
@@ -102,29 +175,91 @@ function englishTerms(text: string): string[] {
   return terms;
 }
 
-function cjkBigrams(text: string): string[] {
-  const terms: string[] = [];
-  for (const match of text.matchAll(CJK_RE)) {
-    const seq = match[0];
-    if (seq.length === 2 && !CJK_STOP_BIGRAMS.has(seq)) {
-      terms.push(seq);
-    } else if (seq.length > 2) {
-      for (let index = 0; index < seq.length - 1; index += 1) {
-        const term = seq.slice(index, index + 2);
-        if (!CJK_STOP_BIGRAMS.has(term)) {
-          terms.push(term);
-        }
+const TECH_TERMS = [
+  "人工智能",
+  "机器学习",
+  "深度学习",
+  "数据分析",
+  "大模型",
+  "提示词",
+  "编程",
+];
+const ZH_STOP = new Set([
+  ...CJK_STOP_BIGRAMS,
+  "请问",
+  "谢谢",
+  "你好",
+  "需要",
+  "问题",
+  "进行",
+  "以及",
+  "如何",
+  "还是",
+  "现在",
+  "这里",
+  "这样",
+  "使用",
+  "没有",
+  "能够",
+  "已经",
+  "自己",
+  "时候",
+  "可能",
+  "一些",
+  "那么",
+  "什么样",
+]);
+interface Segment {
+  segment: string;
+  isWordLike?: boolean;
+}
+const Segmenter = (
+  Intl as unknown as {
+    Segmenter?: new (
+      locale: string,
+      options: { granularity: string },
+    ) => { segment(text: string): Iterable<Segment> };
+  }
+).Segmenter;
+const segmenter = Segmenter
+  ? new Segmenter("zh", { granularity: "word" })
+  : null;
+export function chineseTerms(text: string, useSegmenter = true): string[] {
+  const output: string[] = [];
+  let remaining = text;
+  for (const term of TECH_TERMS) {
+    const pieces = remaining.split(term);
+    for (let i = 1; i < pieces.length; i++) output.push(term);
+    remaining = pieces.join(" ");
+  }
+  for (const match of remaining.matchAll(CJK_RE)) {
+    if (segmenter && useSegmenter) {
+      for (const part of segmenter.segment(match[0]))
+        if (
+          part.isWordLike &&
+          part.segment.length > 1 &&
+          !ZH_STOP.has(part.segment)
+        )
+          output.push(part.segment);
+    } else {
+      const sequence = match[0];
+      for (let i = 0; i < sequence.length - 1; i++) {
+        const term = sequence.slice(i, i + 2);
+        if (!ZH_STOP.has(term)) output.push(term);
       }
     }
   }
-  return terms;
+  return output;
 }
 
 function countChars(text: string, char: string): number {
   return text.split(char).length - 1;
 }
 
-function increment(counter: Map<string, number>, key: string, amount = 1): void {
+function increment(
+  counter: Map<string, number>,
+  key: string,
+  amount = 1,
+): void {
   counter.set(key, (counter.get(key) || 0) + amount);
 }
-

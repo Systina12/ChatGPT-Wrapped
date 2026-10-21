@@ -1,3 +1,5 @@
+import type { ReportOptions } from "./options";
+import type { ParseWarning } from "./export";
 export type CountMap = Record<string, number>;
 
 export type AssetCategory = "image" | "voice" | "file";
@@ -220,7 +222,18 @@ export interface HighlightStats {
   latest_conversation: ConversationSummary | null;
 }
 
+export interface YearComparison {
+  year: string;
+  has_data: boolean;
+  overview: OverviewStats;
+  message_count: number;
+  message_growth_percent: number | null;
+}
 export interface WrappedData {
+  options?: ReportOptions;
+  warnings?: ParseWarning[];
+  available_years?: string[];
+  comparison?: YearComparison | null;
   meta: WrappedMeta;
   overview: OverviewStats;
   timeline: TimelineStats;

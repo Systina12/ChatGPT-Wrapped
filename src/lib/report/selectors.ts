@@ -1,7 +1,21 @@
 import type { CountMap, KeyCount, WrappedData } from "../../types/wrapped";
 import { serializeWrappedData } from "./download";
-import { SHORT_DATE_OPTIONS, formatCount, formatDate, formatHour, formatModel, formatMonth, formatPercent } from "./format";
-import { DAY_LABELS, languageLabel, languageTone, periodLabel, type LegendTone } from "./labels";
+import {
+  SHORT_DATE_OPTIONS,
+  formatCount,
+  formatDate,
+  formatHour,
+  formatModel,
+  formatMonth,
+  formatPercent,
+} from "./format";
+import {
+  DAY_LABELS,
+  languageLabel,
+  languageTone,
+  periodLabel,
+  type LegendTone,
+} from "./labels";
 
 const MONTHS_SHOWN = 12;
 const MODELS_SHOWN = 7;
@@ -106,7 +120,7 @@ export function buildReportViewModel(data: WrappedData): ReportViewModel {
     weekdays: selectWeekdays(data),
     conversations: selectConversations(data),
     words: selectWords(data),
-    rawJson: serializeWrappedData(data),
+    rawJson: "",
   };
 }
 
@@ -121,10 +135,17 @@ function selectMetrics(data: WrappedData): MetricSummary {
   };
 }
 
-function headline({ userMessages, conversations, dateSpanDays }: MetricSummary): string {
-  if (!userMessages && !conversations) return "A blank canvas, waiting for its first question.";
-  if (dateSpanDays > YEAR_IN_DAYS) return `A year-spanning archive with ${formatCount(userMessages)} questions in it.`;
-  if (conversations > MANY_CONVERSATIONS) return `${formatCount(conversations)} conversations made it into the archive.`;
+function headline({
+  userMessages,
+  conversations,
+  dateSpanDays,
+}: MetricSummary): string {
+  if (!userMessages && !conversations)
+    return "A blank canvas, waiting for its first question.";
+  if (dateSpanDays > YEAR_IN_DAYS)
+    return `A year-spanning archive with ${formatCount(userMessages)} questions in it.`;
+  if (conversations > MANY_CONVERSATIONS)
+    return `${formatCount(conversations)} conversations made it into the archive.`;
   return `${formatCount(userMessages)} messages shaped this little corner of your life.`;
 }
 
@@ -214,19 +235,23 @@ function selectWeekdays(data: WrappedData): WeekdayDatum[] {
   const max = Math.max(...Object.values(byWeekday), 1);
   return DAY_LABELS.map((label, index) => {
     const value = byWeekday[String(index)] ?? 0;
-    const opacity = value ? WEEKDAY_MIN_OPACITY + (value / max) * WEEKDAY_OPACITY_RANGE : WEEKDAY_EMPTY_OPACITY;
+    const opacity = value
+      ? WEEKDAY_MIN_OPACITY + (value / max) * WEEKDAY_OPACITY_RANGE
+      : WEEKDAY_EMPTY_OPACITY;
     return { label, value, opacity };
   });
 }
 
 function selectConversations(data: WrappedData): ConversationDatum[] {
-  return data.conversations.longest_by_messages.slice(0, CONVERSATIONS_SHOWN).map((item, index) => ({
-    key: `${item.conversation_id}-${index}`,
-    rank: String(index + 1).padStart(2, "0"),
-    title: item.title?.trim() || "Untitled conversation",
-    date: formatDate(item.created_at, SHORT_DATE_OPTIONS) ?? "Unknown date",
-    messageCount: item.message_count,
-  }));
+  return data.conversations.longest_by_messages
+    .slice(0, CONVERSATIONS_SHOWN)
+    .map((item, index) => ({
+      key: `${item.conversation_id}-${index}`,
+      rank: String(index + 1).padStart(2, "0"),
+      title: item.title?.trim() || "Untitled conversation",
+      date: formatDate(item.created_at, SHORT_DATE_OPTIONS) ?? "Unknown date",
+      messageCount: item.message_count,
+    }));
 }
 
 function selectWords(data: WrappedData): WordDatum[] {
@@ -235,12 +260,17 @@ function selectWords(data: WrappedData): WordDatum[] {
   return words.map((item) => ({
     term: item.term,
     count: item.count,
-    sizeRem: max ? WORD_BASE_SIZE_REM + (item.count / max) * WORD_SIZE_RANGE_REM : WORD_DEFAULT_SIZE_REM,
+    sizeRem: max
+      ? WORD_BASE_SIZE_REM + (item.count / max) * WORD_SIZE_RANGE_REM
+      : WORD_DEFAULT_SIZE_REM,
   }));
 }
 
 function countEntries(map: CountMap): KeyCount[] {
   return Object.entries(map)
     .map(([key, count]) => ({ key, count }))
-    .sort((left, right) => right.count - left.count || left.key.localeCompare(right.key));
+    .sort(
+      (left, right) =>
+        right.count - left.count || left.key.localeCompare(right.key),
+    );
 }

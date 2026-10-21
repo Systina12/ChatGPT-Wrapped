@@ -1,23 +1,47 @@
-const DEFAULT_DATE_OPTIONS: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric" };
+const DEFAULT_DATE_OPTIONS: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+};
 
-export const SHORT_DATE_OPTIONS: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" };
+export const SHORT_DATE_OPTIONS: Intl.DateTimeFormatOptions = {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+};
 
-export function formatDate(value: string | number | null | undefined, options = DEFAULT_DATE_OPTIONS): string | null {
+export function formatDate(
+  value: string | number | null | undefined,
+  options = DEFAULT_DATE_OPTIONS,
+): string | null {
   if (value === null || value === undefined || value === "") {
     return null;
   }
-  const date = typeof value === "number" ? new Date(value * 1000) : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : new Intl.DateTimeFormat(undefined, options).format(date);
+  const date =
+    typeof value === "number" ? new Date(value * 1000) : new Date(value);
+  return Number.isNaN(date.getTime())
+    ? null
+    : new Intl.DateTimeFormat(undefined, {
+        timeZone: "UTC",
+        ...options,
+      }).format(date);
 }
 
 export function formatHour(value: string | null | undefined): string {
   const hour = Number.parseInt(value ?? "", 10);
-  return Number.isFinite(hour) ? `${String(hour).padStart(2, "0")}:00` : "Unknown";
+  return Number.isFinite(hour)
+    ? `${String(hour).padStart(2, "0")}:00`
+    : "Unknown";
 }
 
 export function formatMonth(key: string): string {
   const date = new Date(`${key}-01T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) ? key : new Intl.DateTimeFormat(undefined, { month: "short" }).format(date);
+  return Number.isNaN(date.getTime())
+    ? key
+    : new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        timeZone: "UTC",
+      }).format(date);
 }
 
 export function formatModel(value: string | null | undefined): string {
@@ -26,7 +50,10 @@ export function formatModel(value: string | null | undefined): string {
 }
 
 export function formatCompact(value: number): string {
-  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  return new Intl.NumberFormat(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 export function formatPercent(value: number, total: number): string {
