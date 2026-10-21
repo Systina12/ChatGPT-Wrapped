@@ -113,7 +113,13 @@ function Counts({
     <dl className="count-list">
       {Object.entries(values).map(([key, value]) => (
         <div key={key}>
-          <dt>{labels[key] || translated[key] || key}</dt>
+          <dt>
+            {Object.hasOwn(labels, key)
+              ? labels[key]
+              : Object.hasOwn(translated, key)
+                ? translated[key]
+                : key}
+          </dt>
           <dd>{number(value)}</dd>
         </div>
       ))}
@@ -148,21 +154,26 @@ export function Report({ data }: { data: WrappedData }) {
     >("message_count"),
     [ascending, setAscending] = useState(false),
     [expanded, setExpanded] = useState(false),
+    [rankPage, setRankPage] = useState(0),
     [wordRole, setWordRole] = useState<"user" | "assistant" | "all">("user");
   const zone = data.options?.timezone || "UTC";
   const pages = Math.max(1, Math.ceil(data.timeline.months.length / 12));
   const currentPage = Math.min(monthPage, pages - 1);
   const ranks = useMemo(() => {
     const source =
-      rankMetric === "message_count"
+      data.conversations.ranking ??
+      (rankMetric === "message_count"
         ? data.conversations.longest_by_messages
         : rankMetric === "character_count"
           ? data.conversations.longest_by_characters
-          : data.conversations.most_assets;
+          : data.conversations.most_assets);
     return [...source].sort(
       (a, b) => (a[rankMetric] - b[rankMetric]) * (ascending ? 1 : -1),
     );
   }, [data, rankMetric, ascending]);
+  const rankPageSize = 25;
+  const rankPages = Math.max(1, Math.ceil(ranks.length / rankPageSize));
+  const visibleRankPage = Math.min(rankPage, rankPages - 1);
   const warnings = data.warnings || [];
   const raw = useMemo(
     () => (rawOpen ? JSON.stringify(data, null, 2) : ""),
@@ -385,9 +396,10 @@ export function Report({ data }: { data: WrappedData }) {
               <select
                 aria-label={t("排行排序", "Rank by")}
                 value={rankMetric}
-                onChange={(e) =>
-                  setRankMetric(e.target.value as typeof rankMetric)
-                }
+                onChange={(e) => {
+                  setRankMetric(e.target.value as typeof rankMetric);
+                  setRankPage(0);
+                }}
               >
                 <option value="message_count">{t("消息数", "Messages")}</option>
                 <option value="character_count">
@@ -398,17 +410,37 @@ export function Report({ data }: { data: WrappedData }) {
                 </option>
               </select>
             </label>
-            <button onClick={() => setAscending(!ascending)}>
+            <button
+              onClick={() => {
+                setAscending(!ascending);
+                setRankPage(0);
+              }}
+            >
               {ascending ? t("升序", "Ascending") : t("降序", "Descending")}
             </button>
           </div>
+          {!data.conversations.ranking && (
+            <p>
+              {t(
+                "此旧报告仅保存 Top 20，排序仅限已保存的排行。",
+                "This older report contains Top 20 only; sorting is limited to the saved ranking.",
+              )}
+            </p>
+          )}
           <div className="ranking-list">
             {ranks
-              .slice(0, expanded ? ranks.length : 5)
+              .slice(
+                expanded ? visibleRankPage * rankPageSize : 0,
+                expanded ? (visibleRankPage + 1) * rankPageSize : 5,
+              )
               .map((c: TopConversation, i) => (
                 <details key={`${c.conversation_id}-${i}`}>
                   <summary>
-                    <span>{String(i + 1).padStart(2, "0")}</span>
+                    <span>
+                      {String(
+                        (expanded ? visibleRankPage * rankPageSize : 0) + i + 1,
+                      ).padStart(2, "0")}
+                    </span>
                     <strong>
                       {c.title || t("未命名对话", "Untitled conversation")}
                     </strong>
@@ -425,7 +457,34 @@ export function Report({ data }: { data: WrappedData }) {
                 </details>
               ))}
           </div>
-          <button onClick={() => setExpanded(!expanded)}>
+          {expanded && rankPages > 1 && (
+            <nav
+              className="pagination"
+              aria-label={t("会话排行分页", "Conversation ranking pages")}
+            >
+              <button
+                disabled={visibleRankPage === 0}
+                onClick={() => setRankPage(visibleRankPage - 1)}
+              >
+                {t("上一页排行", "Previous rankings")}
+              </button>
+              <span>
+                {number(visibleRankPage + 1)} / {number(rankPages)}
+              </span>
+              <button
+                disabled={visibleRankPage + 1 >= rankPages}
+                onClick={() => setRankPage(visibleRankPage + 1)}
+              >
+                {t("下一页排行", "Next rankings")}
+              </button>
+            </nav>
+          )}
+          <button
+            onClick={() => {
+              setExpanded(!expanded);
+              setRankPage(0);
+            }}
+          >
             {expanded
               ? t("收起排行", "Collapse ranking")
               : t("展开排行", "Expand ranking")}

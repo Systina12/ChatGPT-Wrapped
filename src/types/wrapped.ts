@@ -138,6 +138,8 @@ export interface ActivityStats {
 }
 
 export interface ConversationStats {
+  /** Full selected conversation summaries for global ranking; older reports may omit it. */
+  ranking?: TopConversation[];
   message_count_distribution: Distribution;
   character_count_distribution: Distribution;
   short_conversation_count: number;

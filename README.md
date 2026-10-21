@@ -10,9 +10,9 @@
 2. Choose the official ZIP or its extracted folder. Folder selection depends on browser support; ZIP is the compatible alternative.
 3. Explore the report, change scope locally, or export a summary/share card. 中英文可随时切换；所有统计按所选时区计算。
 
-ZIP limit: **512 MiB**. Relevant export JSON: **128 MiB per file**, **512 MiB combined after decompression**. Only recognized export JSON is inflated, sequentially, with actual output limits. Missing/damaged main conversation files are errors; an empty array is valid. Partial shards retain visible warnings.
+ZIP limit: **512 MiB**. Relevant export JSON: **128 MiB per file**, **512 MiB combined after decompression**. Only recognized export JSON is inflated, sequentially, with actual output limits. Missing/damaged main conversation files are errors; an empty array is valid. Partial shards retain visible warnings. Non-null malformed message nodes are also reported; a main file containing only damaged message data fails.
 
-A saved/exported summary report has a separate **20 MiB import limit**, is validated in full using Zod, and accepts schema versions 1 and 2. Version 1 is migrated with a warning. Summary reports contain no original archive and cannot be filtered again; share cards still work. Reimport the original ZIP/folder to change scope.
+A saved/exported summary report has a separate **20 MiB import limit**, is validated in full using Zod, and accepts schema versions 1 and 2. Version 1 is migrated with a notice while preserving its original parse-warning count. Summary reports contain no original archive and cannot be filtered again; share cards still work. Reimport the original ZIP/folder to change scope.
 
 ## Scope
 
@@ -23,6 +23,8 @@ A saved/exported summary report has a separate **20 MiB import limit**, is valid
 - All derived statistics and linked attachments, feedback, shares, and group data follow the scope. Undated messages are excluded with a warning when a range is selected.
 - Concrete years compare with the previous year using the same scope. Zero baselines produce no infinite percentages.
 - Zero months are filled up to 1,200 months. Abnormal spans show active months with a warning; month lists are paginated.
+- Enabled group chats participate in conversation totals, timelines, highlights and rankings.
+- New reports sort the entire selected conversation ranking, with 25 rows per expanded page. Older summaries explicitly identify their saved Top-20 limit.
 
 ## Privacy and persistence
 
@@ -58,3 +60,5 @@ Source archives must come from committed files (`git archive`), include newly ad
 The first report screen is a cream/black/lime data overview. **Enter my annual report / 进入我的年度报告** opens seven pages in purple/lime, with live statistics rather than example numbers. Use previous/next buttons, chapter markers, left/right arrows, Page Up/Down, Home/End, or a horizontal swipe. Escape closes the report and returns focus to the opener. Vertical gestures scroll normally. The native modal contains focus; decorative and entrance animations respect `prefers-reduced-motion`.
 
 Complete statistics, warnings and JSON remain available from the report's utility buttons. The final page opens the share-card controls, retaining their default privacy settings. The locally generated card's own preview is independent of the report's page navigation.
+
+The frontend review fixes and regression coverage are documented in [review-fixes-2026-10-21.md](docs/review-fixes-2026-10-21.md).

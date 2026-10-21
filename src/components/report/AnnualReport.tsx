@@ -48,6 +48,7 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
     };
   }, []);
   useEffect(() => {
+    dialog.current?.scrollTo({ top: 0, left: 0, behavior: "instant" });
     heading.current?.focus({ preventScroll: true });
   }, [page]);
   function keyDown(event: KeyboardEvent) {

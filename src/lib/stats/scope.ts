@@ -85,7 +85,7 @@ function currentNodes(
   let node = conversation.currentNode;
   const warn = (code: string) =>
     warnings.push({ code, message: `${code}: ${conversation.conversationId}` });
-  if (!node || !object(mapping[node])) {
+  if (!node || !Object.hasOwn(mapping, node) || !object(mapping[node])) {
     warn("current_branch_unavailable");
     return null;
   }
@@ -96,7 +96,7 @@ function currentNodes(
       break;
     }
     const item: unknown = mapping[node];
-    if (!object(item)) {
+    if (!Object.hasOwn(mapping, node) || !object(item)) {
       warn("branch_parent_missing");
       break;
     }

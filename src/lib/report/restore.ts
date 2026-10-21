@@ -5,14 +5,23 @@ import { validateOptions } from "../stats/scope";
 import { isCalendarDay, toDate } from "../stats/time";
 export const MAX_REPORT_BYTES = 20 * 1024 * 1024;
 const count = z.number().finite().int().nonnegative();
+const isTimestamp = (value: string): boolean =>
+  /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(
+    value,
+  ) &&
+  isCalendarDay(value.slice(0, 10)) &&
+  !!toDate(value);
+const monthKey = z
+  .string()
+  .refine(
+    (value) => /^\d{4}-\d{2}$/.test(value) && isCalendarDay(`${value}-01`),
+    "Invalid month key",
+  );
 const positive = z.number().finite().nonnegative();
 const nullableText = z.string().nullable();
 const timestamp = z
   .string()
-  .refine(
-    (v) => !!toDate(v) && isCalendarDay(v.slice(0, 10)),
-    "Invalid timestamp",
-  )
+  .refine(isTimestamp, "Invalid timestamp")
   .nullable();
 const day = z
   .string()
@@ -42,16 +51,7 @@ const metric = {
   file_count: count,
   voice_count: count,
 };
-const bucket = z
-  .object({ key: z.string(), ...metric })
-  .catchall(z.union([count, z.string()]));
-const calendarBucket = bucket.refine(
-  (v) =>
-    (/^\d{4}$/.test(v.key) && +v.key > 0) ||
-    (/^\d{4}-\d{2}$/.test(v.key) && isCalendarDay(`${v.key}-01`)) ||
-    isCalendarDay(v.key),
-  "Invalid timeline key",
-);
+const bucket = z.object({ key: z.string(), ...metric }).catchall(count);
 const yearBucket = bucket.refine(
   (v) => /^\d{4}$/.test(v.key) && +v.key > 0,
   "Invalid year key",
@@ -133,9 +133,7 @@ const comparison = z
   .nullable();
 const base = z.object({
   meta: z.object({
-    generated_at: z
-      .string()
-      .refine((v) => !!toDate(v), "Invalid generated date"),
+    generated_at: z.string().refine(isTimestamp, "Invalid generated date"),
     schema_version: z.union([z.literal(1), z.literal(2)]),
     table_counts: z
       .object({
@@ -199,6 +197,7 @@ const base = z.object({
     longest_by_messages: z.array(topConversation),
     longest_by_characters: z.array(topConversation),
     most_assets: z.array(topConversation),
+    ranking: z.array(topConversation).optional(),
     earliest: summary.nullable(),
     latest: summary.nullable(),
   }),
@@ -217,7 +216,7 @@ const base = z.object({
   models: z.object({
     models: z.array(model),
     most_used_model: model.nullable(),
-    monthly_primary_model: z.record(z.string(), nullableText),
+    monthly_primary_model: z.record(monthKey, nullableText),
   }),
   assets: z.object({
     total_count: count,
@@ -225,7 +224,7 @@ const base = z.object({
     by_mime_type: z.array(keyCount),
     by_extension: z.array(keyCount),
     size_distribution: distribution,
-    monthly: z.record(z.string(), counts),
+    monthly: z.record(monthKey, counts),
     largest_assets: z.array(
       z.object({
         local_path: z.string(),
@@ -251,7 +250,7 @@ const base = z.object({
     all: terms,
     user: terms,
     assistant: terms,
-    monthly: z.record(z.string(), terms),
+    monthly: z.record(monthKey, terms),
   }),
   quality: z.object({
     feedback_count: count,
@@ -301,11 +300,32 @@ export function restoreReport(value: unknown): WrappedData {
     );
   }
   if (version === 2) return result.data as WrappedData;
+  const originalWarnings = Math.max(
+    result.data.meta.parse_warning_count,
+    result.data.meta.table_counts.parse_warnings,
+  );
+  const warningCount = Math.min(Number.MAX_SAFE_INTEGER, originalWarnings + 1);
   return {
     ...result.data,
-    meta: { ...result.data.meta, schema_version: 2, parse_warning_count: 1 },
+    meta: {
+      ...result.data.meta,
+      schema_version: 2,
+      parse_warning_count: warningCount,
+      table_counts: {
+        ...result.data.meta.table_counts,
+        parse_warnings: warningCount,
+      },
+    },
     options: { ...DEFAULT_OPTIONS, roles: "all", branches: "all" },
     warnings: [
+      ...(originalWarnings > 0
+        ? [
+            {
+              code: "legacy_parse_warnings",
+              message: `${originalWarnings} original parse warnings; details were not retained / 原有解析警告，详情未保存`,
+            },
+          ]
+        : []),
       {
         code: "legacy_report",
         message:

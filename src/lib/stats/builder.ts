@@ -1,4 +1,4 @@
-import { mergeAssets, classifyAsset } from "../export/assets";
+import { mergeAssets, classifyAsset, assetExtension } from "../export/assets";
 import type {
   ParsedAsset,
   ParsedConversation,
@@ -189,9 +189,7 @@ function overview(context: BuildContext): OverviewStats {
   const assetCounts = dedupedAssetCounts(context.assets);
 
   return {
-    conversation_count: context.conversations.filter(
-      (conversation) => conversation.source === "conversation",
-    ).length,
+    conversation_count: context.conversations.length,
     user_message_count: userMessages.length,
     assistant_message_count: assistantMessages.length,
     image_count: assetCounts.image,
@@ -221,9 +219,6 @@ function timeline(context: BuildContext): TimelineStats {
   };
 
   context.conversations.forEach((conversation) => {
-    if (conversation.source !== "conversation") {
-      return;
-    }
     const createdAt = firstDate(
       conversation.createTime,
       conversation.createTimeText,
@@ -260,7 +255,10 @@ function timeline(context: BuildContext): TimelineStats {
   });
 
   const messageTimes = new Map(
-    context.messages.map((message) => [`${message.conversationId}\0${message.messageId}`, message.calendarAt]),
+    context.messages.map((message) => [
+      `${message.conversationId}\0${message.messageId}`,
+      message.calendarAt,
+    ]),
   );
   context.assets.forEach((asset) => {
     if (asset.source === "library_file") {
@@ -334,7 +332,7 @@ function activity(messages: MessageWithStats[]): ActivityStats {
 }
 
 function conversationStats(context: BuildContext): ConversationStats {
-  const ordinary = ordinaryAggregates(context);
+  const ordinary = selectedAggregates(context);
   return {
     message_count_distribution: distribution(
       ordinary.map((item) => item.messageCount),
@@ -352,6 +350,7 @@ function conversationStats(context: BuildContext): ConversationStats {
     longest_by_messages: topConversations(ordinary, "messageCount"),
     longest_by_characters: topConversations(ordinary, "characterCount"),
     most_assets: topConversations(ordinary, "assetCount"),
+    ranking: topConversations(ordinary, "messageCount", ordinary.length),
     earliest: firstConversation(ordinary),
     latest: lastConversation(ordinary),
   };
@@ -456,7 +455,10 @@ function modelStats(messages: MessageWithStats[]): ModelStats {
 
 function assetStats(context: BuildContext): AssetStats {
   const messageTimes = new Map(
-    context.messages.map((message) => [`${message.conversationId}\0${message.messageId}`, message.calendarAt]),
+    context.messages.map((message) => [
+      `${message.conversationId}\0${message.messageId}`,
+      message.calendarAt,
+    ]),
   );
   const usableAssets = context.assets.filter(
     (asset) => asset.source !== "library_file",
@@ -465,9 +467,7 @@ function assetStats(context: BuildContext): AssetStats {
     usableAssets.map((asset) => asset.mimeType || "unknown"),
   );
   const extensions = counter(
-    usableAssets.map(
-      (asset) => asset.fileExtension || suffix(asset.displayName) || "unknown",
-    ),
+    usableAssets.map((asset) => assetExtension(asset) || "unknown"),
   );
   const monthly = new Map<string, Map<string, number>>();
 
@@ -563,7 +563,7 @@ function frequentWords(messages: MessageWithStats[]): FrequentWordStats {
 }
 
 function qualityStats(context: BuildContext): QualityStats {
-  const ordinary = ordinaryAggregates(context);
+  const ordinary = selectedAggregates(context);
   return {
     feedback_count: context.parsed.feedback.length,
     feedback_by_rating: Object.fromEntries(
@@ -589,7 +589,7 @@ function highlights(
   activityStats: ActivityStats,
   modelStatsValue: ModelStats,
 ): HighlightStats {
-  const ordinary = ordinaryAggregates(context);
+  const ordinary = selectedAggregates(context);
   return {
     most_active_day: timelineStats.most_active_day,
     most_active_month: timelineStats.most_active_month,
@@ -687,10 +687,8 @@ function conversationAggregates(
   return [...aggregates.values()];
 }
 
-function ordinaryAggregates(context: BuildContext): ConversationAggregate[] {
-  return conversationAggregates(context).filter(
-    (item) => item.source === "conversation",
-  );
+function selectedAggregates(context: BuildContext): ConversationAggregate[] {
+  return conversationAggregates(context);
 }
 
 function metricBucket(): MetricBucket {
@@ -807,7 +805,12 @@ function largestAssets(
   limit = TOP_N,
 ): LargestAsset[] {
   return assets
-    .filter((asset) => asset.sizeBytes)
+    .filter(
+      (asset) =>
+        asset.sizeBytes !== null &&
+        Number.isSafeInteger(asset.sizeBytes) &&
+        asset.sizeBytes >= 0,
+    )
     .sort((left, right) => (right.sizeBytes || 0) - (left.sizeBytes || 0))
     .slice(0, limit)
     .map((asset) => ({
@@ -891,14 +894,6 @@ function dedupedAssetCounts(
   return result;
 }
 
-function suffix(value: string | null | undefined): string {
-  if (!value) {
-    return "";
-  }
-  const text = value.toLowerCase().replace(/^\./, "");
-  return text.includes(".") ? text.split(".").pop() || "" : text;
-}
-
 function counter(values: Iterable<string>): Map<string, number> {
   const output = new Map<string, number>();
   for (const value of values) {
@@ -937,26 +932,4 @@ function safeRatio(left: number, right: number): number | null {
 
 function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
-}
-
-function daysInclusive(first: Date, last: Date): number {
-  const start = Date.UTC(
-    first.getUTCFullYear(),
-    first.getUTCMonth(),
-    first.getUTCDate(),
-  );
-  const end = Date.UTC(
-    last.getUTCFullYear(),
-    last.getUTCMonth(),
-    last.getUTCDate(),
-  );
-  return Math.floor((end - start) / 86_400_000) + 1;
-}
-
-function intersects(values: Set<string>, candidates: string[]): boolean {
-  return candidates.some((candidate) => values.has(candidate));
-}
-
-function isDate(value: Date | null): value is Date {
-  return value !== null;
 }

@@ -30,6 +30,20 @@ export function escapeXml(value: string): string {
       })[char]!,
   );
 }
+export function shareText(
+  value: string,
+  limit: number,
+  maxFontSize = 25,
+): { text: string; fontSize: number } {
+  const points = Array.from(value);
+  const text =
+    points.length > limit ? `${points.slice(0, limit - 1).join("")}…` : value;
+  // A full-width glyph uses approximately one em; reserve margins on both sides.
+  return {
+    text: escapeXml(text),
+    fontSize: Math.min(maxFontSize, 900 / Math.max(1, Array.from(text).length)),
+  };
+}
 export function shareSvg(data: WrappedData, options: ShareOptions): string {
   const zh = options.language === "zh";
   const number = (n: number) =>
@@ -44,7 +58,24 @@ export function shareSvg(data: WrappedData, options: ShareOptions): string {
     ? data.conversations.longest_by_messages[0]?.title || ""
     : "";
   const year = data.options?.year || "all";
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350"><rect width="1080" height="1350" fill="#cec1ff"/><circle cx="1010" cy="290" r="270" fill="none" stroke="#1d1b21" stroke-width="2"/><circle cx="1010" cy="290" r="200" fill="#d6ff43"/><g fill="#19171c" font-family="system-ui,sans-serif"><text x="80" y="105" font-size="28" letter-spacing="5">CHATGPT / WRAPPED</text><text x="80" y="270" font-size="92" font-weight="800" textLength="920" lengthAdjust="spacingAndGlyphs">${zh ? "每个问题，都算数。" : "Every question counts."}</text><text x="80" y="350" font-size="28">${escapeXml(year === "all" ? (zh ? "我的对话档案" : "My conversation archive") : year)}</text><text x="75" y="605" font-size="190" font-weight="900">${number(data.meta.table_counts.messages)}</text><text x="85" y="670" font-size="36">${zh ? "条消息，连接好奇与可能" : "messages. A world of possibility."}</text><path d="M80 740H1000" stroke="#19171c"/><text x="80" y="830" font-size="60" font-weight="800">${number(data.overview.conversation_count)}</text><text x="80" y="885" font-size="28">${zh ? "次对话" : "conversations"}</text><text x="590" y="830" font-size="60" font-weight="800">${number(data.timeline.longest_active_streak.days)}</text><text x="590" y="885" font-size="28">${zh ? "天连续探索" : "day streak"}</text><text x="80" y="1000" font-size="25">${escapeXml(words.slice(0, 70))}</text><text x="80" y="1070" font-size="25">${escapeXml(title.slice(0, 50))}</text><text x="80" y="1240" font-size="22">${zh ? "浏览器本地生成 · 由我选择分享" : "Made locally. Shared by choice."}</text></g></svg>`;
+  const period =
+    year === "all"
+      ? zh
+        ? "我的对话档案"
+        : "My conversation archive"
+      : year === "custom"
+        ? `${data.options!.start} → ${data.options!.end}`
+        : year;
+  const sharedWords = shareText(words, 70);
+  const sharedTitle = shareText(title, 80);
+  const messageNumber = shareText(
+    new Intl.NumberFormat(zh ? "zh-CN" : "en-US").format(
+      data.meta.table_counts.messages,
+    ),
+    32,
+    190,
+  );
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350"><rect width="1080" height="1350" fill="#cec1ff"/><circle cx="1010" cy="290" r="270" fill="none" stroke="#1d1b21" stroke-width="2"/><circle cx="1010" cy="290" r="200" fill="#d6ff43"/><g fill="#19171c" font-family="system-ui,sans-serif"><text x="80" y="105" font-size="28" letter-spacing="5">CHATGPT / WRAPPED</text><text x="80" y="270" font-size="92" font-weight="800" textLength="920" lengthAdjust="spacingAndGlyphs">${zh ? "每个问题，都算数。" : "Every question counts."}</text><text x="80" y="350" font-size="28">${escapeXml(period)}</text><text x="75" y="605" font-size="${messageNumber.fontSize}" font-weight="900">${messageNumber.text}</text><text x="85" y="670" font-size="36">${zh ? "条消息，连接好奇与可能" : "messages. A world of possibility."}</text><path d="M80 740H1000" stroke="#19171c"/><text x="80" y="830" font-size="60" font-weight="800">${number(data.overview.conversation_count)}</text><text x="80" y="885" font-size="28">${zh ? "次对话" : "conversations"}</text><text x="590" y="830" font-size="60" font-weight="800">${number(data.timeline.longest_active_streak.days)}</text><text x="590" y="885" font-size="28">${zh ? "天连续探索" : "day streak"}</text><text x="80" y="1000" font-size="${sharedWords.fontSize}">${sharedWords.text}</text><text x="80" y="1070" font-size="${sharedTitle.fontSize}">${sharedTitle.text}</text><text x="80" y="1240" font-size="22">${zh ? "浏览器本地生成 · 由我选择分享" : "Made locally. Shared by choice."}</text></g></svg>`;
 }
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);

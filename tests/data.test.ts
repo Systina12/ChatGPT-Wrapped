@@ -114,7 +114,7 @@ describe("size limits and selective inflation", () => {
     );
     expect(progress.length).toBe(1);
   });
-  it("caps the actual decompressed bytes even if ZIP metadata lies", async () => {
+  it("rejects inconsistent ZIP uncompressed-size metadata", async () => {
     const zip = new JSZip();
     zip.file("conversations.json", " ".repeat(1024));
     const bytes = await zip.generateAsync({
@@ -225,6 +225,10 @@ describe("attachment merging", () => {
       raw: { audio_asset_pointer: "opaque" },
     } as ParsedAsset;
     expect(classifyAsset(base)).toBe("voice");
+    expect(classifyAsset({ ...base, raw: { audio: true } })).toBe("voice");
+    expect(
+      classifyAsset({ ...base, mimeType: "image/png", raw: { audio: true } }),
+    ).toBe("image");
     expect(
       classifyAsset({ ...base, raw: { content_type: "image_asset_pointer" } }),
     ).toBe("image");

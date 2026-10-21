@@ -14,7 +14,7 @@ import type {
   ParseWarning,
   SourceFile,
 } from "../../types/export";
-import { mergeAssets } from "./assets";
+import { mergeAssets, pathExtension } from "./assets";
 import { readJsonEntry, type ImportProgress } from "./fileInput";
 
 export async function parseExportEntries(
@@ -141,7 +141,10 @@ class ExportParser {
         normalizedName,
         mimeType: asStr(item.mime_type),
         fileExtension: asStr(item.file_extension),
-        fileSizeBytes: asInt(item.file_size_bytes),
+        fileSizeBytes: this.assetInteger(
+          item.file_size_bytes,
+          "library.file_size_bytes",
+        ),
         state: asStr(item.state),
         initiatingConversationId: asStr(item.initiating_conversation_id),
         originationMessageId: asStr(item.origination_message_id),
@@ -189,26 +192,27 @@ class ExportParser {
         this.warn("invalid_conversation_file", `${file.name} is not an array`);
         continue;
       }
-      if (data.length && !data.some(isValidConversation)) {
-        this.warn(
-          "invalid_conversation_file",
-          `${file.name}: no usable conversations`,
-        );
-        continue;
-      }
-      validFiles++;
+      let usable = 0;
       data.forEach((conversation, index) => {
         if (!isValidConversation(conversation)) {
           this.warn(
             "invalid_conversation",
-            `${file.name}[${index}] is not an object`,
+            `${file.name}[${index}] is not a valid conversation`,
           );
           return;
         }
         const fallbackId = `${file.name.replace(/\.json$/, "")}:${index}`;
+        if (!this.insertConversationMessages(conversation, fallbackId)) {
+          this.warn(
+            "invalid_conversation",
+            `${file.name}[${index}] contains only damaged message data`,
+          );
+          return;
+        }
         this.insertConversation(conversation, fallbackId);
-        this.insertConversationMessages(conversation, fallbackId);
+        usable++;
       });
+      if (data.length === 0 || usable > 0) validFiles++;
     }
     if (!validFiles)
       throw new Error(
@@ -322,6 +326,12 @@ class ExportParser {
       return;
     }
 
+    const byId = new Map<string, ParsedConversation[]>();
+    for (const conversation of this.conversations) {
+      const rows = byId.get(conversation.conversationId) || [];
+      rows.push(conversation);
+      byId.set(conversation.conversationId, rows);
+    }
     data.forEach((item, index) => {
       if (!isObject(item)) {
         this.warn(
@@ -341,13 +351,9 @@ class ExportParser {
         raw: item,
       });
       if (conversationId) {
-        this.conversations
-          .filter(
-            (conversation) => conversation.conversationId === conversationId,
-          )
-          .forEach((conversation) => {
-            conversation.isShared = true;
-          });
+        (byId.get(conversationId) || []).forEach((conversation) => {
+          conversation.isShared = true;
+        });
       }
     });
   }
@@ -411,9 +417,7 @@ class ExportParser {
       defaultModelSlug: asStr(conversation.default_model_slug),
       isArchived: asBool(conversation.is_archived),
       isStarred: asBool(conversation.is_starred),
-      isShared: this.conversations.some(
-        (item) => item.conversationId === conversationId && item.isShared,
-      ),
+      isShared: false,
       raw: conversation,
     });
   }
@@ -421,24 +425,44 @@ class ExportParser {
   private insertConversationMessages(
     conversation: JsonObject,
     fallbackId: string,
-  ): void {
+  ): boolean {
     const conversationId = conversationIdFor(conversation, fallbackId);
-    if (conversation.mapping === undefined) {
-      return;
-    }
+    if (conversation.mapping == null) return true;
     if (!isObject(conversation.mapping)) {
       this.warn(
         "invalid_mapping",
         `conversation ${conversationId} mapping is not an object`,
       );
-      return;
+      return false;
     }
-
+    let validMessages = 0,
+      damagedNodes = 0;
     Object.entries(conversation.mapping).forEach(([nodeId, node]) => {
-      if (!isObject(node) || !isObject(node.message)) {
+      if (!isObject(node)) {
+        this.warn(
+          "invalid_mapping_node",
+          `${conversationId}/${nodeId}: invalid mapping node`,
+        );
+        damagedNodes++;
+        return;
+      }
+      // Message-free nodes are legitimate links in the current branch.
+      if (node.message == null) return;
+      if (
+        !isObject(node.message) ||
+        !isObject(node.message.author) ||
+        typeof node.message.author.role !== "string" ||
+        !isObject(node.message.content)
+      ) {
+        this.warn(
+          "invalid_message",
+          `${conversationId}/${nodeId}: damaged message`,
+        );
+        damagedNodes++;
         return;
       }
       const message = node.message;
+      validMessages++;
       const content = isObject(message.content) ? message.content : {};
       const metadata = isObject(message.metadata) ? message.metadata : {};
       const author = isObject(message.author) ? message.author : {};
@@ -463,6 +487,7 @@ class ExportParser {
       });
       this.insertMessageAssets(conversationId, messageId, content, metadata);
     });
+    return damagedNodes === 0 || validMessages > 0;
   }
 
   private insertGroupMessage(
@@ -551,6 +576,16 @@ class ExportParser {
       const library = this.libraryForAsset(localPath, displayName);
       this.insertAsset({
         source: "message_part",
+        categoryHint:
+          key === "audio_asset_pointer"
+            ? "voice"
+            : key === "video_container_asset_pointer"
+              ? "file"
+              : String(part.content_type || "").includes("image")
+                ? "image"
+                : String(part.content_type || "").includes("audio")
+                  ? "voice"
+                  : undefined,
         localPath,
         displayName,
         mimeType:
@@ -559,9 +594,13 @@ class ExportParser {
           guessMime(localPath),
         fileExtension: libraryValue(library, "file_extension"),
         sizeBytes:
-          asInt(part.size_bytes) || libraryInt(library, "file_size_bytes"),
-        width: asInt(part.width),
-        height: asInt(part.height),
+          this.assetInteger(part.size_bytes, "size_bytes") ??
+          this.assetInteger(
+            library?.file_size_bytes,
+            "library.file_size_bytes",
+          ),
+        width: this.assetInteger(part.width, "width"),
+        height: this.assetInteger(part.height, "height"),
         conversationId,
         messageId,
         raw: {
@@ -582,6 +621,7 @@ class ExportParser {
         }
         this.insertAsset({
           source: "message_part_frame",
+          categoryHint: "image",
           localPath,
           displayName: this.assetNames.get(localPath) || null,
           mimeType: guessMime(localPath),
@@ -625,13 +665,25 @@ class ExportParser {
         asStr(attachment.mime_type) || libraryValue(library, "mime_type"),
       fileExtension: libraryValue(library, "file_extension"),
       sizeBytes:
-        asInt(attachment.size_bytes) || libraryInt(library, "file_size_bytes"),
-      width: asInt(attachment.width),
-      height: asInt(attachment.height),
+        this.assetInteger(attachment.size_bytes, "size_bytes") ??
+        this.assetInteger(library?.file_size_bytes, "library.file_size_bytes"),
+      width: this.assetInteger(attachment.width, "width"),
+      height: this.assetInteger(attachment.height, "height"),
       conversationId,
       messageId,
       raw: attachment,
     });
+  }
+
+  private assetInteger(value: unknown, field: string): number | null {
+    if (value == null) return null;
+    if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
+      return value;
+    this.warn(
+      "invalid_asset_metadata",
+      `${field}: expected a non-negative safe integer / 附件尺寸或大小无效`,
+    );
+    return null;
   }
 
   private insertAsset(asset: ParsedAsset): void {
@@ -759,12 +811,8 @@ function libraryValue(library: JsonObject | null, key: string): string | null {
   return library ? asStr(library[key]) : null;
 }
 
-function libraryInt(library: JsonObject | null, key: string): number | null {
-  return library ? asInt(library[key]) : null;
-}
-
 function guessMime(localPath: string): string | null {
-  const extension = suffix(localPath);
+  const extension = pathExtension(localPath);
   const byExtension: Record<string, string> = {
     aac: "audio/aac",
     bmp: "image/bmp",
@@ -785,14 +833,6 @@ function guessMime(localPath: string): string | null {
     webp: "image/webp",
   };
   return byExtension[extension] || null;
-}
-
-function suffix(value: string | null | undefined): string {
-  if (!value) {
-    return "";
-  }
-  const text = value.toLowerCase().replace(/^\./, "");
-  return text.includes(".") ? text.split(".").pop() || "" : text;
 }
 
 function isObject(value: unknown): value is JsonObject {
@@ -835,7 +875,7 @@ function isValidConversation(value: unknown): value is JsonObject {
   return (
     isObject(value) &&
     (isObject(value.mapping) ||
-      (value.mapping === undefined &&
+      (value.mapping == null &&
         (typeof value.id === "string" ||
           typeof value.conversation_id === "string")))
   );

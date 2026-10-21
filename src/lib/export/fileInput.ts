@@ -31,12 +31,24 @@ function aborted(signal?: AbortSignal): void {
   if (signal?.aborted)
     throw new DOMException("Import cancelled / 导入已取消", "AbortError");
 }
-export function checkJsonSize(size: number, total: number): void {
-  if (size > MAX_JSON_BYTES)
+export interface JsonLimits {
+  fileBytes: number;
+  totalBytes: number;
+}
+export const JSON_LIMITS: Readonly<JsonLimits> = Object.freeze({
+  fileBytes: MAX_JSON_BYTES,
+  totalBytes: MAX_TOTAL_JSON_BYTES,
+});
+export function checkJsonSize(
+  size: number,
+  total: number,
+  limits: Readonly<JsonLimits> = JSON_LIMITS,
+): void {
+  if (size > limits.fileBytes)
     throw new Error(
       "A report JSON exceeds 128 MiB / 单个数据 JSON 超过 128 MiB",
     );
-  if (total > MAX_TOTAL_JSON_BYTES)
+  if (total > limits.totalBytes)
     throw new Error(
       "Report JSON total exceeds 512 MiB / 数据 JSON 总量超过 512 MiB",
     );
@@ -95,53 +107,16 @@ async function zipToEntries(
         ?.uncompressedSize || 0;
     if (isRelevantJson(entry.name)) {
       checkJsonSize(size, total + size);
-      const chunks: Uint8Array[] = [];
-      let actual = 0;
-      await new Promise<void>((resolve, reject) => {
-        const stream = (
-          entry as unknown as {
-            internalStream(type: "uint8array"): {
-              on(event: "data", callback: (chunk: Uint8Array) => void): void;
-              on(event: "error", callback: (error: Error) => void): void;
-              on(event: "end", callback: () => void): void;
-              pause(): void;
-              resume(): void;
-            };
-          }
-        ).internalStream("uint8array");
-        const abort = () => {
-          stream.pause();
-          reject(new DOMException("Import cancelled", "AbortError"));
-        };
-        options.signal?.addEventListener("abort", abort, { once: true });
-        const cleanup = () =>
-          options.signal?.removeEventListener("abort", abort);
-        stream.on("data", (chunk) => {
-          try {
-            aborted(options.signal);
-            actual += chunk.byteLength;
-            checkJsonSize(actual, total + actual);
-            chunks.push(chunk);
-          } catch (error) {
-            stream.pause();
-            cleanup();
-            reject(error);
-          }
-        });
-        stream.on("error", (error) => {
-          cleanup();
-          reject(error);
-        });
-        stream.on("end", () => {
-          cleanup();
-          resolve();
-        });
-        stream.resume();
-      });
-      total += actual;
-      size = actual;
+      const stream = (
+        entry as unknown as {
+          internalStream(type: "uint8array"): ZipByteStream;
+        }
+      ).internalStream("uint8array");
+      const result = await readBoundedZipStream(stream, total, options.signal);
+      total += result.sizeBytes;
+      size = result.sizeBytes;
       // Decode only after the bounded stream finishes; irrelevant JSON is never inflated.
-      text = await new Blob(chunks as BlobPart[]).text();
+      text = await new Blob(result.chunks as BlobPart[]).text();
       completed++;
       options.onProgress?.({
         phase: "reading",
@@ -152,6 +127,60 @@ async function zipToEntries(
     entries.push({ path: entry.name, name: basename(entry.name), size, text });
   }
   return normalize(entries);
+}
+export interface ZipByteStream {
+  on(event: "data", callback: (chunk: Uint8Array) => void): void;
+  on(event: "error", callback: (error: Error) => void): void;
+  on(event: "end", callback: () => void): void;
+  pause(): void;
+  resume(): void;
+}
+export function readBoundedZipStream(
+  stream: ZipByteStream,
+  previousBytes: number,
+  signal?: AbortSignal,
+  limits: Readonly<JsonLimits> = JSON_LIMITS,
+): Promise<{ chunks: Uint8Array[]; sizeBytes: number }> {
+  return new Promise((resolve, reject) => {
+    let sizeBytes = 0,
+      settled = false;
+    const chunks: Uint8Array[] = [];
+    const cleanup = () => signal?.removeEventListener("abort", abort);
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      stream.pause();
+      cleanup();
+      chunks.length = 0;
+      reject(error);
+    };
+    const abort = () =>
+      fail(new DOMException("Import cancelled / 导入已取消", "AbortError"));
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    stream.on("data", (chunk) => {
+      if (settled) return;
+      try {
+        aborted(signal);
+        sizeBytes += chunk.byteLength;
+        checkJsonSize(sizeBytes, previousBytes + sizeBytes, limits);
+        chunks.push(chunk);
+      } catch (error) {
+        fail(error);
+      }
+    });
+    stream.on("error", fail);
+    stream.on("end", () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve({ chunks, sizeBytes });
+    });
+    stream.resume();
+  });
 }
 export async function readJsonEntry(entry: ExportEntry): Promise<unknown> {
   if (!isRelevantJson(entry.name)) return undefined;

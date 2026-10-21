@@ -50,6 +50,7 @@ export interface ParsedMessage {
 }
 
 export interface ParsedAsset {
+  categoryHint?: "image" | "voice" | "file";
   source: "library_file" | "message_part" | "message_part_frame" | "attachment";
   localPath: string;
   displayName: string | null;
@@ -147,4 +148,3 @@ export interface ParsedExport {
   settings: ParsedSetting[];
   warnings: ParseWarning[];
 }
-
