@@ -1,10 +1,12 @@
 # React-Only Refactor Implementation Plan
 
+> Historical implementation plan. Its Python-retention steps are superseded: the retired application and tests were removed from `main` on 2026-10-22.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Refactor the project into a pure frontend React app that parses ChatGPT exports and computes wrapped statistics in the browser.
 
-**Architecture:** Vite + React + TypeScript is the main project. Legacy Python remains under `legacy/python/` for reference. Export parsing and statistics run in a Web Worker and return a `WrappedData` object for the UI to display or download.
+**Architecture:** Vite + React + TypeScript is the main project. Legacy Python was initially kept under `legacy/python/` for reference and was removed on 2026-10-22. Export parsing and statistics run in a Web Worker and return a `WrappedData` object for the UI to display or download.
 
 **Tech Stack:** React, TypeScript, Vite, JSZip, Web Workers.
 
@@ -19,7 +21,7 @@
 - Create: `package.json`, `tsconfig.json`, `vite.config.ts`, `index.html`
 - Modify: `.gitignore`, `README.md`
 
-- [ ] Keep Python available as a legacy reference.
+- Superseded: Python was retained during the initial migration and removed on 2026-10-22.
 - [ ] Make the repository root a Vite React app.
 - [ ] Keep `data/`, `workspace/`, build output, and dependency folders ignored.
 

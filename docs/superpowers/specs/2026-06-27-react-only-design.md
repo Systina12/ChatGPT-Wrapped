@@ -1,12 +1,14 @@
 # React-Only ChatGPT Wrapped Design
 
+> Historical design. The retired Python application and tests were removed from `main` on 2026-10-22; the browser application now uses only React, TypeScript and Vite.
+
 ## Goal
 
 Turn ChatGPT-Wrapped into a pure frontend React application. Users provide their official ChatGPT export in the browser, and all parsing, counting, and report-data generation happens locally on the user's device.
 
 ## Architecture
 
-The root project is a Vite + React + TypeScript app. The old Python parser remains under `legacy/python/` as a reference implementation until the TypeScript parser reaches parity.
+The root project is a Vite + React + TypeScript app. During the initial migration, the old Python parser was kept under `legacy/python/` as a reference implementation. That directory has since been removed.
 
 The browser app has four layers:
 

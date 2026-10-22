@@ -2,7 +2,9 @@
 
 [Live demo](https://systina12.github.io/ChatGPT-Wrapped/) · React + TypeScript + Vite · runs entirely in your browser.
 
-**Rebuilt functionality:** the earlier session's uncommitted changes were not found. This implementation was rebuilt from the requirements on top of `main` at `02977878b63d7d0a527d59f169bbc85bae5f57c3`. See [reconstruction evidence](docs/rebuild-2026-10-21.md). This is not a recovered original diff. Legacy Python is outside this change.
+**Rebuilt functionality:** the earlier session's uncommitted changes were not found. This implementation was rebuilt from the requirements on top of `main` at `02977878b63d7d0a527d59f169bbc85bae5f57c3`. See [reconstruction evidence](docs/rebuild-2026-10-21.md). This is not a recovered original diff.
+
+The retired Python application and its tests were removed from `main` on 2026-10-22. The application and CI use React, TypeScript and Vite. `scripts/archive-source.py` is a standalone source-packaging utility; it is not needed to install, run, test or build the application.
 
 ## Use / 使用
 
