@@ -50,19 +50,22 @@ export async function touchGestureEvent(
       };
       const touches = point.type === "touchstart" ? [position] : [];
       const changedTouches = [position];
-      if (typeof Touch === "function" && typeof TouchEvent === "function") {
-        element.dispatchEvent(
-          new TouchEvent(point.type, {
+      let event: Event | undefined;
+      try {
+        if (typeof Touch === "function" && typeof TouchEvent === "function")
+          event = new TouchEvent(point.type, {
             bubbles: true,
             cancelable: true,
             touches: touches.map((value) => new Touch(value)),
             changedTouches: changedTouches.map((value) => new Touch(value)),
-          }),
-        );
-      } else {
-        // Desktop Firefox has no Touch constructor. Exercise the same handler
-        // with touch-list properties instead of failing inside Playwright.
-        const event = new Event(point.type, {
+          });
+      } catch {
+        // Desktop WebKit exposes Touch constructors that cannot be called.
+      }
+      if (!event) {
+        // Desktop Firefox has no Touch constructor. Both engines can exercise
+        // the same React handler with explicit touch-list properties.
+        event = new Event(point.type, {
           bubbles: true,
           cancelable: true,
         });
@@ -70,8 +73,8 @@ export async function touchGestureEvent(
           touches: { value: touches },
           changedTouches: { value: changedTouches },
         });
-        element.dispatchEvent(event);
       }
+      element.dispatchEvent(event);
     },
     { type, clientX, clientY },
   );
