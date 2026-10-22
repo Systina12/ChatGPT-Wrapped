@@ -15,7 +15,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
   build:
+    needs: checks
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,12 +35,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Data tests
-        run: npm test
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

@@ -57,7 +57,12 @@ export function AnnualChapterDetails({
                   <i style={{ height: `${(values[i] / maximum) * 100}%` }} />
                 </span>
                 <b>{day}</b>
-                <small>{number(values[i])}</small>
+                <small title={number(values[i])}>
+                  {number(values[i], {
+                    notation: "compact",
+                    maximumFractionDigits: 0,
+                  })}
+                </small>
               </div>
             ))}
           </div>

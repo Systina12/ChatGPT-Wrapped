@@ -27,7 +27,33 @@ const day = z
   .string()
   .refine(isCalendarDay, "Invalid calendar date")
   .nullable();
-const counts = z.record(z.string(), count);
+// Zod's record parser drops __proto__. Validate entries before rebuilding own keys.
+function recordOf<T extends z.ZodType>(key: z.ZodType<string>, value: T) {
+  return z
+    .unknown()
+    .transform((input, context): Record<string, z.output<T>> => {
+      if (!input || typeof input !== "object" || Array.isArray(input)) {
+        context.addIssue({ code: "custom", message: "Expected a record" });
+        return z.NEVER;
+      }
+      const entries: [string, z.output<T>][] = [];
+      for (const [name, item] of Object.entries(input)) {
+        const parsedKey = key.safeParse(name),
+          parsedValue = value.safeParse(item);
+        if (!parsedKey.success || !parsedValue.success) {
+          context.addIssue({
+            code: "custom",
+            path: [name],
+            message: "Invalid record key or value",
+          });
+          return z.NEVER;
+        }
+        entries.push([parsedKey.data, parsedValue.data]);
+      }
+      return Object.fromEntries(entries);
+    });
+}
+const counts = recordOf(z.string(), count);
 const keyCount = z.object({ key: z.string(), count });
 const terms = z.array(z.object({ term: z.string(), count }));
 const distribution = z.object({
@@ -216,7 +242,7 @@ const base = z.object({
   models: z.object({
     models: z.array(model),
     most_used_model: model.nullable(),
-    monthly_primary_model: z.record(monthKey, nullableText),
+    monthly_primary_model: recordOf(monthKey, nullableText),
   }),
   assets: z.object({
     total_count: count,
@@ -224,7 +250,7 @@ const base = z.object({
     by_mime_type: z.array(keyCount),
     by_extension: z.array(keyCount),
     size_distribution: distribution,
-    monthly: z.record(monthKey, counts),
+    monthly: recordOf(monthKey, counts),
     largest_assets: z.array(
       z.object({
         local_path: z.string(),
@@ -250,7 +276,7 @@ const base = z.object({
     all: terms,
     user: terms,
     assistant: terms,
-    monthly: z.record(monthKey, terms),
+    monthly: recordOf(monthKey, terms),
   }),
   quality: z.object({
     feedback_count: count,

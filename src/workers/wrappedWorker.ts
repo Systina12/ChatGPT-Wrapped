@@ -3,12 +3,14 @@ import {
   type ImportProgress,
 } from "../lib/export/fileInput";
 import { parseExportEntries } from "../lib/export/parser";
+import { CalendarCache } from "../lib/stats/calendarCache";
 import { buildReport } from "../lib/report/engine";
 import type { ParsedExport } from "../types/export";
 import type { ReportOptions } from "../types/options";
 import type { WrappedData } from "../types/wrapped";
 export type WorkerRequest = { id: number; options: ReportOptions } & (
-  { type: "import"; files: File[] } | { type: "recalculate" }
+  | { type: "import"; files: File[] }
+  | { type: "recalculate" }
 );
 export type WorkerResponse = { id: number } & (
   | { type: "progress"; progress: ImportProgress }
@@ -17,6 +19,7 @@ export type WorkerResponse = { id: number } & (
 );
 let parsed: ParsedExport | null = null;
 let latestId = 0;
+let cache: CalendarCache | undefined;
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
   latestId = request.id;
@@ -34,10 +37,16 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       const result = await parseExportEntries(entries, progress);
       if (latestId !== request.id) return;
       parsed = result;
+      cache = undefined;
     }
     if (!parsed) throw new Error("Original data unavailable / 原始数据不可用");
-    progress({ phase: "statistics", completed: 0, total: 1 });
-    const data = buildReport(parsed, request.options);
+    if (cache?.timezone !== request.options.timezone)
+      cache = new CalendarCache(request.options.timezone);
+    const data = buildReport(parsed, request.options, {
+      cache,
+      onProgress: (completed, total) =>
+        progress({ phase: "statistics", completed, total }),
+    });
     send({ type: "done", id: request.id, data });
   } catch (error) {
     send({

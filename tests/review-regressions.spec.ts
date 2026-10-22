@@ -193,7 +193,7 @@ test("global ascending ranking includes the smallest conversations and paginates
     page.locator(".ranking-list details").first().locator("summary b"),
   ).toHaveText("1");
 });
-test("older summaries explicitly identify their Top-20-only ranking", async ({
+test("summaries explicitly identify when the full ranking is unavailable", async ({
   page,
 }) => {
   const report = await sampleReport();
@@ -202,7 +202,7 @@ test("older summaries explicitly identify their Top-20-only ranking", async ({
   await ready(page);
   await page.getByText("Explore complete statistics", { exact: true }).click();
   await expect(
-    page.getByText("This older report contains Top 20 only", { exact: false }),
+    page.getByText("This report omits the full ranking", { exact: false }),
   ).toBeVisible();
 });
 test("short viewport page changes return headings to the visible top", async ({

@@ -5,7 +5,7 @@ interface Props {
   state: ReportState;
   onFiles: (files: File[]) => void;
   onReport: (file: File) => void;
-  onDownload: () => void;
+  onDownload: (full?: boolean) => void;
   onReset: () => void;
 }
 export function StatusBar({
@@ -28,7 +28,9 @@ export function StatusBar({
         ? t("正在解析", "Parsing")
         : t("正在统计", "Calculating");
   const text = busy
-    ? `${phaseText} ${number(state.progress.completed)} / ${number(state.progress.total)}`
+    ? phase === "statistics"
+      ? `${phaseText} ${number(state.progress.completed / Math.max(state.progress.total, 1), { style: "percent", maximumFractionDigits: 0 })}`
+      : `${phaseText} ${number(state.progress.completed)} / ${number(state.progress.total)}`
     : state.status === "done"
       ? t("本地报告已就绪", "Your local report is ready")
       : state.status === "error"
@@ -69,9 +71,14 @@ export function StatusBar({
           {t("导入报告 JSON", "Import report JSON")}
         </button>
         {state.status === "done" && (
-          <button onClick={onDownload}>
-            {t("下载报告 JSON", "Download report JSON")}
-          </button>
+          <>
+            <button onClick={() => onDownload()}>
+              {t("下载报告 JSON", "Download report JSON")}
+            </button>
+            <button onClick={() => onDownload(true)}>
+              {t("下载完整数据 JSON", "Download full data JSON")}
+            </button>
+          </>
         )}
         <button onClick={onReset} disabled={state.status === "idle"}>
           {busy ? t("取消", "Cancel") : t("重置", "Reset")}

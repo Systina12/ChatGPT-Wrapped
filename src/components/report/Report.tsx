@@ -7,6 +7,7 @@ import type {
 } from "../../types/wrapped";
 import { useI18n } from "../../lib/report/i18n";
 import { ShareCard } from "./ShareCard";
+import { PagedList } from "./PagedList";
 import { CuriosityMark } from "../ui/CuriosityMark";
 import { AnnualReport, type ReportDestination } from "./AnnualReport";
 export function Metrics({ data }: { data: WrappedData }) {
@@ -67,20 +68,24 @@ function Bars({
       aria-label={label}
       tabIndex={0}
     >
-      {values.map(([key, value]) => (
-        <div
-          className="chart-item"
-          tabIndex={0}
-          key={key}
-          aria-label={`${key}: ${number(value)}`}
-        >
-          <span>{key}</span>
-          <div className="chart-track">
-            <i style={{ width: `${(value / max) * 100}%` }} />
-          </div>
-          <strong>{number(value)}</strong>
-        </div>
-      ))}
+      <PagedList items={values} label={label}>
+        {(visible) =>
+          visible.map(([key, value]) => (
+            <div
+              className="chart-item"
+              tabIndex={0}
+              key={key}
+              aria-label={`${key}: ${number(value)}`}
+            >
+              <span>{key}</span>
+              <div className="chart-track">
+                <i style={{ width: `${(value / max) * 100}%` }} />
+              </div>
+              <strong>{number(value)}</strong>
+            </div>
+          ))
+        }
+      </PagedList>
     </div>
   );
 }
@@ -115,20 +120,27 @@ function Counts({
     weekend: t("周末", "Weekend"),
   };
   return (
-    <dl className="count-list">
-      {Object.entries(values).map(([key, value]) => (
-        <div key={key}>
-          <dt>
-            {Object.hasOwn(labels, key)
-              ? labels[key]
-              : Object.hasOwn(translated, key)
-                ? translated[key]
-                : key}
-          </dt>
-          <dd>{number(value)}</dd>
-        </div>
-      ))}
-    </dl>
+    <PagedList
+      items={Object.entries(values)}
+      label={t("分类统计", "Category statistics")}
+    >
+      {(visible) => (
+        <dl className="count-list">
+          {visible.map(([key, value]) => (
+            <div key={key}>
+              <dt>
+                {Object.hasOwn(labels, key)
+                  ? labels[key]
+                  : Object.hasOwn(translated, key)
+                    ? translated[key]
+                    : key}
+              </dt>
+              <dd>{number(value)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </PagedList>
   );
 }
 export function Report({ data }: { data: WrappedData }) {
@@ -145,6 +157,7 @@ export function Report({ data }: { data: WrappedData }) {
     const target = document.getElementById(ids[destination]);
     if (target instanceof HTMLDetailsElement) target.open = true;
     if (destination === "json") setRawOpen(true);
+    if (destination === "statistics") setStatisticsOpen(true);
     requestAnimationFrame(() => {
       target?.scrollIntoView({ block: "start" });
       (target?.querySelector("summary,button") as HTMLElement | null)?.focus({
@@ -152,6 +165,7 @@ export function Report({ data }: { data: WrappedData }) {
       });
     });
   }
+  const [statisticsOpen, setStatisticsOpen] = useState(false);
   const [rawOpen, setRawOpen] = useState(false),
     [monthPage, setMonthPage] = useState(0),
     [rankMetric, setRankMetric] = useState<
@@ -165,6 +179,7 @@ export function Report({ data }: { data: WrappedData }) {
   const pages = Math.max(1, Math.ceil(data.timeline.months.length / 12));
   const currentPage = Math.min(monthPage, pages - 1);
   const ranks = useMemo(() => {
+    if (!statisticsOpen) return [];
     const source =
       data.conversations.ranking ??
       (rankMetric === "message_count"
@@ -175,7 +190,7 @@ export function Report({ data }: { data: WrappedData }) {
     return [...source].sort(
       (a, b) => (a[rankMetric] - b[rankMetric]) * (ascending ? 1 : -1),
     );
-  }, [data, rankMetric, ascending]);
+  }, [data, rankMetric, ascending, statisticsOpen]);
   const rankPageSize = 25;
   const rankPages = Math.max(1, Math.ceil(ranks.length / rankPageSize));
   const visibleRankPage = Math.min(rankPage, rankPages - 1);
@@ -298,13 +313,21 @@ export function Report({ data }: { data: WrappedData }) {
           {number(data.meta.parse_warning_count)})
         </summary>
         {warnings.length ? (
-          <ul>
-            {warnings.map((w, i) => (
-              <li key={i}>
-                <code>{w.code}</code> — {w.message}
-              </li>
-            ))}
-          </ul>
+          <PagedList
+            items={warnings}
+            label={t("解析警告", "Parse warnings")}
+            size={50}
+          >
+            {(visible) => (
+              <ul>
+                {visible.map((w, i) => (
+                  <li key={i}>
+                    <code>{w.code}</code> — {w.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </PagedList>
         ) : (
           <p>
             {data.meta.parse_warning_count
@@ -316,287 +339,321 @@ export function Report({ data }: { data: WrappedData }) {
           </p>
         )}
       </details>
-      <details className="feature-panel full-statistics" id="full-statistics">
+      <details
+        className="feature-panel full-statistics"
+        id="full-statistics"
+        onToggle={(event) => setStatisticsOpen(event.currentTarget.open)}
+      >
         <summary>{t("查看完整统计", "Explore complete statistics")}</summary>
-        <div className="detail-grid">
-          <section className="feature-panel">
-            <h3>{t("月份活动", "Monthly activity")}</h3>
-            <Bars
-              label={t("月份消息图表", "Monthly messages chart")}
-              values={data.timeline.months
-                .slice(currentPage * 12, currentPage * 12 + 12)
-                .map((m) => [m.key, m.message_count])}
-            />
-            <div className="pagination">
-              <button
-                disabled={currentPage === 0}
-                onClick={() => setMonthPage(currentPage - 1)}
-              >
-                {t("上一页月份", "Previous months")}
-              </button>
-              <span>
-                {number(currentPage + 1)} / {number(pages)}
-              </span>
-              <button
-                disabled={currentPage + 1 >= pages}
-                onClick={() => setMonthPage(currentPage + 1)}
-              >
-                {t("下一页月份", "Next months")}
-              </button>
+        {statisticsOpen && (
+          <>
+            <div className="detail-grid">
+              <section className="feature-panel">
+                <h3>{t("月份活动", "Monthly activity")}</h3>
+                <Bars
+                  label={t("月份消息图表", "Monthly messages chart")}
+                  values={data.timeline.months
+                    .slice(currentPage * 12, currentPage * 12 + 12)
+                    .map((m) => [m.key, m.message_count])}
+                />
+                <div className="pagination">
+                  <button
+                    disabled={currentPage === 0}
+                    onClick={() => setMonthPage(currentPage - 1)}
+                  >
+                    {t("上一页月份", "Previous months")}
+                  </button>
+                  <span>
+                    {number(currentPage + 1)} / {number(pages)}
+                  </span>
+                  <button
+                    disabled={currentPage + 1 >= pages}
+                    onClick={() => setMonthPage(currentPage + 1)}
+                  >
+                    {t("下一页月份", "Next months")}
+                  </button>
+                </div>
+              </section>
+              <section className="feature-panel">
+                <h3>{t("一天中的灵感", "Hours of inspiration")}</h3>
+                <Bars
+                  label={t("小时活动图表", "Hourly activity chart")}
+                  values={Object.entries(data.activity.by_hour).map(
+                    ([h, n]) => [`${h}:00`, n],
+                  )}
+                />
+              </section>
+              <section className="feature-panel">
+                <h3>{t("星期与时段", "Weekdays & day periods")}</h3>
+                <Counts
+                  values={data.activity.by_weekday}
+                  labels={Object.fromEntries(
+                    t(
+                      "周一,周二,周三,周四,周五,周六,周日",
+                      "Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday",
+                    )
+                      .split(",")
+                      .map((s, i) => [String(i), s]),
+                  )}
+                />
+                <Counts values={data.activity.by_day_period} />
+                <Counts values={data.activity.weekday_vs_weekend} />
+                <p>
+                  {t("最长无活动间隔", "Longest inactive gap")}:{" "}
+                  {number(data.timeline.longest_inactive_gap.days)}{" "}
+                  {t("天", "days")}
+                </p>
+              </section>
+              <section className="feature-panel">
+                <h3>{t("模型与语言", "Models & languages")}</h3>
+                <Bars
+                  label={t("模型使用图表", "Model usage chart")}
+                  values={data.models.models.map((m) => [
+                    m.model === "unknown"
+                      ? t("模型信息缺失", "Unknown model metadata")
+                      : m.model,
+                    m.message_count,
+                  ])}
+                />
+                <Counts values={data.language.message_buckets} />
+                <Counts
+                  values={data.language.totals}
+                  labels={{
+                    chinese_characters: t("中文字符", "Chinese characters"),
+                    english_words: t("英文单词", "English words"),
+                    digit_characters: t("数字字符", "Digit characters"),
+                  }}
+                />
+              </section>
             </div>
-          </section>
-          <section className="feature-panel">
-            <h3>{t("一天中的灵感", "Hours of inspiration")}</h3>
-            <Bars
-              label={t("小时活动图表", "Hourly activity chart")}
-              values={Object.entries(data.activity.by_hour).map(([h, n]) => [
-                `${h}:00`,
-                n,
-              ])}
-            />
-          </section>
-          <section className="feature-panel">
-            <h3>{t("星期与时段", "Weekdays & day periods")}</h3>
-            <Counts
-              values={data.activity.by_weekday}
-              labels={Object.fromEntries(
-                t(
-                  "周一,周二,周三,周四,周五,周六,周日",
-                  "Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday",
-                )
-                  .split(",")
-                  .map((s, i) => [String(i), s]),
+            <section className="feature-panel">
+              <h3>{t("对话排行", "Conversation ranking")}</h3>
+              <div className="inline-controls">
+                <label>
+                  {t("排行排序", "Rank by")}
+                  <select
+                    aria-label={t("排行排序", "Rank by")}
+                    value={rankMetric}
+                    onChange={(e) => {
+                      setRankMetric(e.target.value as typeof rankMetric);
+                      setRankPage(0);
+                    }}
+                  >
+                    <option value="message_count">
+                      {t("消息数", "Messages")}
+                    </option>
+                    <option value="character_count">
+                      {t("字符数", "Characters")}
+                    </option>
+                    <option value="asset_count">
+                      {t("附件数", "Attachments")}
+                    </option>
+                  </select>
+                </label>
+                <button
+                  onClick={() => {
+                    setAscending(!ascending);
+                    setRankPage(0);
+                  }}
+                >
+                  {ascending ? t("升序", "Ascending") : t("降序", "Descending")}
+                </button>
+              </div>
+              {!data.conversations.ranking && (
+                <p>
+                  {t(
+                    "此报告未保存完整排行，排序仅限已保存的主要排行。",
+                    "This report omits the full ranking; sorting is limited to the saved highlights.",
+                  )}
+                </p>
               )}
-            />
-            <Counts values={data.activity.by_day_period} />
-            <Counts values={data.activity.weekday_vs_weekend} />
-            <p>
-              {t("最长无活动间隔", "Longest inactive gap")}:{" "}
-              {number(data.timeline.longest_inactive_gap.days)}{" "}
-              {t("天", "days")}
-            </p>
-          </section>
-          <section className="feature-panel">
-            <h3>{t("模型与语言", "Models & languages")}</h3>
-            <Bars
-              label={t("模型使用图表", "Model usage chart")}
-              values={data.models.models.map((m) => [m.model, m.message_count])}
-            />
-            <Counts values={data.language.message_buckets} />
-            <Counts
-              values={data.language.totals}
-              labels={{
-                chinese_characters: t("中文字符", "Chinese characters"),
-                english_words: t("英文单词", "English words"),
-                digit_characters: t("数字字符", "Digit characters"),
-              }}
-            />
-          </section>
-        </div>
-        <section className="feature-panel">
-          <h3>{t("对话排行", "Conversation ranking")}</h3>
-          <div className="inline-controls">
-            <label>
-              {t("排行排序", "Rank by")}
-              <select
-                aria-label={t("排行排序", "Rank by")}
-                value={rankMetric}
-                onChange={(e) => {
-                  setRankMetric(e.target.value as typeof rankMetric);
+              <div className="ranking-list">
+                {ranks
+                  .slice(
+                    expanded ? visibleRankPage * rankPageSize : 0,
+                    expanded ? (visibleRankPage + 1) * rankPageSize : 5,
+                  )
+                  .map((c: TopConversation, i) => (
+                    <details key={`${c.conversation_id}-${i}`}>
+                      <summary>
+                        <span>
+                          {String(
+                            (expanded ? visibleRankPage * rankPageSize : 0) +
+                              i +
+                              1,
+                          ).padStart(2, "0")}
+                        </span>
+                        <strong>
+                          {c.title || t("未命名对话", "Untitled conversation")}
+                        </strong>
+                        <b>{number(c[rankMetric])}</b>
+                      </summary>
+                      <p>
+                        {t("用户 / 助手消息", "User / assistant messages")}:{" "}
+                        {number(c.user_message_count)} /{" "}
+                        {number(c.assistant_message_count)} ·{" "}
+                        {t("字符", "Characters")}: {number(c.character_count)} ·{" "}
+                        {t("附件", "Attachments")}: {number(c.asset_count)} ·{" "}
+                        {date(c.created_at, zone)}
+                      </p>
+                    </details>
+                  ))}
+              </div>
+              {expanded && rankPages > 1 && (
+                <nav
+                  className="pagination"
+                  aria-label={t("会话排行分页", "Conversation ranking pages")}
+                >
+                  <button
+                    disabled={visibleRankPage === 0}
+                    onClick={() => setRankPage(visibleRankPage - 1)}
+                  >
+                    {t("上一页排行", "Previous rankings")}
+                  </button>
+                  <span>
+                    {number(visibleRankPage + 1)} / {number(rankPages)}
+                  </span>
+                  <button
+                    disabled={visibleRankPage + 1 >= rankPages}
+                    onClick={() => setRankPage(visibleRankPage + 1)}
+                  >
+                    {t("下一页排行", "Next rankings")}
+                  </button>
+                </nav>
+              )}
+              <button
+                onClick={() => {
+                  setExpanded(!expanded);
                   setRankPage(0);
                 }}
               >
-                <option value="message_count">{t("消息数", "Messages")}</option>
-                <option value="character_count">
-                  {t("字符数", "Characters")}
-                </option>
-                <option value="asset_count">
-                  {t("附件数", "Attachments")}
-                </option>
-              </select>
-            </label>
-            <button
-              onClick={() => {
-                setAscending(!ascending);
-                setRankPage(0);
-              }}
-            >
-              {ascending ? t("升序", "Ascending") : t("降序", "Descending")}
-            </button>
-          </div>
-          {!data.conversations.ranking && (
-            <p>
-              {t(
-                "此旧报告仅保存 Top 20，排序仅限已保存的排行。",
-                "This older report contains Top 20 only; sorting is limited to the saved ranking.",
-              )}
-            </p>
-          )}
-          <div className="ranking-list">
-            {ranks
-              .slice(
-                expanded ? visibleRankPage * rankPageSize : 0,
-                expanded ? (visibleRankPage + 1) * rankPageSize : 5,
-              )
-              .map((c: TopConversation, i) => (
-                <details key={`${c.conversation_id}-${i}`}>
-                  <summary>
-                    <span>
-                      {String(
-                        (expanded ? visibleRankPage * rankPageSize : 0) + i + 1,
-                      ).padStart(2, "0")}
-                    </span>
-                    <strong>
-                      {c.title || t("未命名对话", "Untitled conversation")}
-                    </strong>
-                    <b>{number(c[rankMetric])}</b>
-                  </summary>
-                  <p>
-                    {t("用户 / 助手消息", "User / assistant messages")}:{" "}
-                    {number(c.user_message_count)} /{" "}
-                    {number(c.assistant_message_count)} ·{" "}
-                    {t("字符", "Characters")}: {number(c.character_count)} ·{" "}
-                    {t("附件", "Attachments")}: {number(c.asset_count)} ·{" "}
-                    {date(c.created_at, zone)}
-                  </p>
-                </details>
-              ))}
-          </div>
-          {expanded && rankPages > 1 && (
-            <nav
-              className="pagination"
-              aria-label={t("会话排行分页", "Conversation ranking pages")}
-            >
-              <button
-                disabled={visibleRankPage === 0}
-                onClick={() => setRankPage(visibleRankPage - 1)}
-              >
-                {t("上一页排行", "Previous rankings")}
+                {expanded
+                  ? t("收起排行", "Collapse ranking")
+                  : t("展开排行", "Expand ranking")}
               </button>
-              <span>
-                {number(visibleRankPage + 1)} / {number(rankPages)}
-              </span>
-              <button
-                disabled={visibleRankPage + 1 >= rankPages}
-                onClick={() => setRankPage(visibleRankPage + 1)}
+            </section>
+            <section className="feature-panel">
+              <h3>{t("常用关键词", "Frequent keywords")}</h3>
+              <label>
+                {t("关键词角色", "Keyword role")}
+                <select
+                  aria-label={t("关键词角色", "Keyword role")}
+                  value={wordRole}
+                  onChange={(e) =>
+                    setWordRole(e.target.value as typeof wordRole)
+                  }
+                >
+                  <option value="user">{t("用户", "User")}</option>
+                  <option value="assistant">{t("助手", "Assistant")}</option>
+                  <option value="all">{t("全部", "All")}</option>
+                </select>
+              </label>
+              <PagedList
+                key={wordRole}
+                items={data.frequent_words[wordRole]}
+                label={t("关键词", "Keywords")}
               >
-                {t("下一页排行", "Next rankings")}
-              </button>
-            </nav>
-          )}
-          <button
-            onClick={() => {
-              setExpanded(!expanded);
-              setRankPage(0);
-            }}
-          >
-            {expanded
-              ? t("收起排行", "Collapse ranking")
-              : t("展开排行", "Expand ranking")}
-          </button>
-        </section>
-        <section className="feature-panel">
-          <h3>{t("常用关键词", "Frequent keywords")}</h3>
-          <label>
-            {t("关键词角色", "Keyword role")}
-            <select
-              aria-label={t("关键词角色", "Keyword role")}
-              value={wordRole}
-              onChange={(e) => setWordRole(e.target.value as typeof wordRole)}
-            >
-              <option value="user">{t("用户", "User")}</option>
-              <option value="assistant">{t("助手", "Assistant")}</option>
-              <option value="all">{t("全部", "All")}</option>
-            </select>
-          </label>
-          <div className="keyword-cloud">
-            {data.frequent_words[wordRole].map((w) => (
-              <span key={w.term} title={number(w.count)}>
-                {w.term}
-                <small>{number(w.count)}</small>
-              </span>
-            ))}
-          </div>
-        </section>
-        <div className="detail-grid">
-          <section className="feature-panel">
-            <h3>{t("消息长度分布", "Message length distribution")}</h3>
-            <h4>{t("全部消息", "All messages")}</h4>
-            <Counts values={data.messages.all_length_distribution} />
-            <h4>{t("用户消息", "User messages")}</h4>
-            <Counts values={data.messages.user_length_distribution} />
-            <h4>{t("助手消息", "Assistant messages")}</h4>
-            <Counts values={data.messages.assistant_length_distribution} />
-            <p>
-              {t("用户 / 助手字符比例", "User / assistant character ratio")}:{" "}
-              {data.messages.user_to_assistant_character_ratio === null
-                ? "—"
-                : number(data.messages.user_to_assistant_character_ratio, {
-                    maximumFractionDigits: 4,
-                  })}
-            </p>
-            <Counts
-              values={{
-                "?": data.messages.question_marks,
-                "!": data.messages.exclamation_marks,
-                URL: data.messages.url_count,
-                [t("代码块", "Code blocks")]: data.messages.code_block_count,
-              }}
-            />
-          </section>
-          <section className="feature-panel">
-            <h3>{t("对话状态与反馈", "Conversation state & feedback")}</h3>
-            <Counts
-              values={{
-                [t("归档", "Archived")]: data.conversations.archived_count,
-                [t("收藏", "Starred")]: data.conversations.starred_count,
-                [t("已分享对话", "Shared conversations")]:
-                  data.conversations.shared_count,
-                [t("反馈", "Feedback")]: data.quality.feedback_count,
-                [t("有反馈的对话", "Conversations with feedback")]:
-                  data.quality.conversations_with_feedback_count,
-                [t("群聊", "Group chats")]:
-                  data.meta.table_counts.group_chats || 0,
-              }}
-            />
-            <Counts values={data.quality.feedback_by_rating} />
-            <h4>{t("对话消息分布", "Messages per conversation")}</h4>
-            <Counts values={data.conversations.message_count_distribution} />
-            <h4>{t("对话字符分布", "Characters per conversation")}</h4>
-            <Counts values={data.conversations.character_count_distribution} />
-          </section>
-          <section className="feature-panel">
-            <h3>{t("附件统计", "Attachments")}</h3>
-            <p>
-              {t(
-                "仅统计去重后的对话附件，资料库文件不重复计数。",
-                "Deduplicated conversation attachments; library metadata is not counted again.",
-              )}
-            </p>
-            <Counts values={data.assets.by_category} />
-            <h4>MIME</h4>
-            <Counts
-              values={Object.fromEntries(
-                data.assets.by_mime_type.map((a) => [a.key, a.count]),
-              )}
-            />
-            <h4>{t("文件扩展名", "File extensions")}</h4>
-            <Counts
-              values={Object.fromEntries(
-                data.assets.by_extension.map((a) => [a.key, a.count]),
-              )}
-            />
-            <details>
-              <summary>{t("大附件详情", "Largest attachment details")}</summary>
-              {data.assets.largest_assets.map((a, i) => (
-                <p key={i}>
-                  {a.display_name || a.local_path} · {number(a.size_bytes || 0)}{" "}
-                  B
+                {(visible) => (
+                  <div className="keyword-cloud">
+                    {visible.map((w) => (
+                      <span key={w.term} title={number(w.count)}>
+                        {w.term}
+                        <small>{number(w.count)}</small>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </PagedList>
+            </section>
+            <div className="detail-grid">
+              <section className="feature-panel">
+                <h3>{t("消息长度分布", "Message length distribution")}</h3>
+                <h4>{t("全部消息", "All messages")}</h4>
+                <Counts values={data.messages.all_length_distribution} />
+                <h4>{t("用户消息", "User messages")}</h4>
+                <Counts values={data.messages.user_length_distribution} />
+                <h4>{t("助手消息", "Assistant messages")}</h4>
+                <Counts values={data.messages.assistant_length_distribution} />
+                <p>
+                  {t("用户 / 助手字符比例", "User / assistant character ratio")}
+                  :{" "}
+                  {data.messages.user_to_assistant_character_ratio === null
+                    ? "—"
+                    : number(data.messages.user_to_assistant_character_ratio, {
+                        maximumFractionDigits: 4,
+                      })}
                 </p>
-              ))}
-            </details>
-          </section>
-        </div>
+                <Counts
+                  values={{
+                    "?": data.messages.question_marks,
+                    "!": data.messages.exclamation_marks,
+                    URL: data.messages.url_count,
+                    [t("代码块", "Code blocks")]:
+                      data.messages.code_block_count,
+                  }}
+                />
+              </section>
+              <section className="feature-panel">
+                <h3>{t("对话状态与反馈", "Conversation state & feedback")}</h3>
+                <Counts
+                  values={{
+                    [t("归档", "Archived")]: data.conversations.archived_count,
+                    [t("收藏", "Starred")]: data.conversations.starred_count,
+                    [t("已分享对话", "Shared conversations")]:
+                      data.conversations.shared_count,
+                    [t("反馈", "Feedback")]: data.quality.feedback_count,
+                    [t("有反馈的对话", "Conversations with feedback")]:
+                      data.quality.conversations_with_feedback_count,
+                    [t("群聊", "Group chats")]:
+                      data.meta.table_counts.group_chats || 0,
+                  }}
+                />
+                <Counts values={data.quality.feedback_by_rating} />
+                <h4>{t("对话消息分布", "Messages per conversation")}</h4>
+                <Counts
+                  values={data.conversations.message_count_distribution}
+                />
+                <h4>{t("对话字符分布", "Characters per conversation")}</h4>
+                <Counts
+                  values={data.conversations.character_count_distribution}
+                />
+              </section>
+              <section className="feature-panel">
+                <h3>{t("附件统计", "Attachments")}</h3>
+                <p>
+                  {t(
+                    "仅统计去重后的对话附件，资料库文件不重复计数。",
+                    "Deduplicated conversation attachments; library metadata is not counted again.",
+                  )}
+                </p>
+                <Counts values={data.assets.by_category} />
+                <h4>MIME</h4>
+                <Counts
+                  values={Object.fromEntries(
+                    data.assets.by_mime_type.map((a) => [a.key, a.count]),
+                  )}
+                />
+                <h4>{t("文件扩展名", "File extensions")}</h4>
+                <Counts
+                  values={Object.fromEntries(
+                    data.assets.by_extension.map((a) => [a.key, a.count]),
+                  )}
+                />
+                <details>
+                  <summary>
+                    {t("大附件详情", "Largest attachment details")}
+                  </summary>
+                  {data.assets.largest_assets.map((a, i) => (
+                    <p key={i}>
+                      {a.display_name || a.local_path} ·{" "}
+                      {number(a.size_bytes || 0)} B
+                    </p>
+                  ))}
+                </details>
+              </section>
+            </div>
+          </>
+        )}
       </details>
       <div id="report-share">
         <ShareCard data={data} />

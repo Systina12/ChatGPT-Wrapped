@@ -16,6 +16,8 @@ ZIP limit: **512 MiB**. Relevant export JSON: **128 MiB per file**, **512 MiB co
 
 A saved/exported summary report has a separate **20 MiB import limit**, is validated in full using Zod, and accepts schema versions 1 and 2. Version 1 is migrated with a notice while preserving its original parse-warning count. Summary reports contain no original archive and cannot be filtered again; share cards still work. Reimport the original ZIP/folder to change scope.
 
+**Download report JSON** creates a report within that reopening limit. If necessary, it omits the full conversation ranking and retains a visible notice, main rankings and summary statistics. **Download full data JSON** preserves the complete report; files above 20 MiB cannot be reopened here. Both downloads require a sensitive-content confirmation. If the remaining summary itself exceeds the limit, the reopenable download fails with an explanation instead of producing an unusable file.
+
 ## Scope
 
 - IANA timezone; all years, a concrete year, or an inclusive custom date range.
@@ -26,11 +28,13 @@ A saved/exported summary report has a separate **20 MiB import limit**, is valid
 - Concrete years compare with the previous year using the same scope. Zero baselines produce no infinite percentages.
 - Zero months are filled up to 1,200 months. Abnormal spans show active months with a warning; month lists are paginated.
 - Enabled group chats participate in conversation totals, timelines, highlights and rankings.
-- New reports sort the entire selected conversation ranking, with 25 rows per expanded page. Older summaries explicitly identify their saved Top-20 limit.
+- New reports sort the entire selected conversation ranking, with 25 rows per expanded page. Older or compact summaries explicitly identify when the full ranking is unavailable.
+- Overlapping conversation shards merge by conversation ID and retain their combined mapping history. Duplicate/conflicting data produces visible warnings; later usable nodes take precedence, while damaged duplicates cannot replace valid history.
+- Missing model metadata remains in an unknown-attribution bucket and is excluded from the known model count and most-used-model selection.
 
 ## Privacy and persistence
 
-No backend, analytics, account, uploads or remote fonts. Parsing and calculation run in a retained Web Worker. Recalculation reuses parsed input; cancellation, reset and replacement terminate the worker. Request IDs and worker identity isolate stale results.
+No backend, analytics, account, uploads or remote fonts. Parsing and calculation run in a retained Web Worker. Recalculation reuses parsed input and calendar conversions for the selected timezone; changing timezone replaces that cache. Keywords are segmented once per message for total, role and month statistics. Statistics progress covers intermediate stages and keyword batches. Cancellation, reset and replacement terminate the worker. Request IDs and worker identity isolate stale results.
 
 Nothing is automatically saved. **Save locally / 保存到本地** explicitly stores the validated summary in this browser under `chatgpt-wrapped.saved-report.v2`. Open and clear are explicit actions; storage failures are visible. Reset removes in-memory data, while clearing the saved report removes the persistent copy.
 
@@ -51,9 +55,9 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Browser tests build and serve `/ChatGPT-Wrapped/`, using Chromium desktop and mobile viewports. Set `CHROMIUM_PATH` for an installed executable; otherwise Playwright's Chromium is used (Linux `/usr/bin/chromium` is detected). Optional Firefox/WebKit projects require their browsers and `PLAYWRIGHT_ALL_BROWSERS=1`. Their local success must be verified separately; it is not implied by Chromium results.
+Browser tests build and serve `/ChatGPT-Wrapped/`, using Chromium desktop and mobile viewports by default. Set `CHROMIUM_PATH` for an installed executable; otherwise Playwright's Chromium is used (Linux `/usr/bin/chromium` is detected). Firefox/WebKit projects require their browsers and `PLAYWRIGHT_ALL_BROWSERS=1`. Their local success must be verified separately; it is not implied by Chromium results. The typecheck command also checks tests and tooling configuration.
 
-Unit tests use synthetic data, including 150,000 messages, corrupt/empty input, ZIP/folder limits, attachment merging, DST, branch cycles/missing nodes, filtering, comparison, schema validation, storage failure and share privacy. Browser checks cover real import/recalculation, cancellation/stale worker responses, persistence, downloads, keyboard focus and responsive layouts. GitHub Actions runs frontend checks on branches/PRs; Pages deploys only from `main`.
+Unit tests use synthetic data, including 150,000 messages, corrupt/empty input, ZIP/folder limits, attachment merging, DST, branch cycles/missing nodes, filtering, comparison, schema validation, storage failure and share privacy. Browser checks cover real import/recalculation, cancellation/stale worker responses, persistence, downloads, keyboard focus, responsive layouts and automated accessibility across all fourteen chapters at 320px. GitHub Actions checks Chromium, Firefox and WebKit on branches/PRs. Pages deploys only from `main`, after those checks succeed for the same commit.
 
 Source archives must come from committed files (`git archive`), include newly added modules and tests, and exclude dependencies, caches, real exports and secrets. Archive SHA256 and the corresponding commit are recorded alongside each delivery.
 
@@ -67,4 +71,7 @@ See the [fourteen-page design and data mapping](docs/annual-report-14-pages.md).
 
 Complete statistics, warnings and JSON remain available from the report's utility buttons. The final page opens the share-card controls, retaining their default privacy settings. The locally generated card's own preview is independent of the report's page navigation.
 
+Complete statistics mount only when expanded. Long model, category, keyword and warning lists are paginated, retaining all values in the report. The story calendar has a keyboard-accessible daily data table; chapter markers scroll locally on narrow screens without reducing their touch target size.
+
 The frontend review fixes and regression coverage are documented in [review-fixes-2026-10-21.md](docs/review-fixes-2026-10-21.md).
+The second review's data-integrity, performance and accessibility changes are documented in [review-fixes-2026-10-22.md](docs/review-fixes-2026-10-22.md).

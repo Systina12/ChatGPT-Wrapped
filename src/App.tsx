@@ -50,17 +50,44 @@ function Workspace() {
           setNotice("");
           void importReport(file);
         }}
-        onDownload={() => {
+        onDownload={(full = false) => {
           if (
             state.status === "done" &&
             window.confirm(
               t(
                 "报告 JSON 可能包含会话标题、消息摘录、关键词和附件名称等敏感内容。确定下载？",
                 "Report JSON may contain sensitive conversation titles, message excerpts, keywords and attachment names. Download?",
-              ),
+              ) +
+                (full
+                  ? t(
+                      " 完整数据可能超过 20 MiB，无法在此重新打开。",
+                      " Full data may exceed 20 MiB and cannot then be reopened here.",
+                    )
+                  : t(
+                      " 超过上限时将省略完整会话排行，以便重新打开。",
+                      " If needed, the full conversation ranking will be omitted to keep the report reopenable.",
+                    )),
             )
-          )
-            downloadWrappedData(state.data);
+          ) {
+            try {
+              const result = downloadWrappedData(state.data, full);
+              setNotice(
+                result.compacted
+                  ? t(
+                      "已下载精简报告，省略了完整会话排行，文件内保留了说明。",
+                      "Compact report downloaded; the full conversation ranking was omitted and a notice retained.",
+                    )
+                  : full
+                    ? t("完整数据已下载", "Full data downloaded")
+                    : t(
+                        "可重新打开的报告已下载",
+                        "Reopenable report downloaded",
+                      ),
+              );
+            } catch (error) {
+              setNotice(error instanceof Error ? error.message : String(error));
+            }
+          }
         }}
         onReset={() => {
           reset();

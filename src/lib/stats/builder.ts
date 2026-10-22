@@ -34,7 +34,8 @@ import type {
 import {
   codeBlockCount,
   excerpt,
-  frequentTerms,
+  textTerms,
+  topTerms,
   languageBucket,
   languageCounts,
   punctuationCounts,
@@ -56,6 +57,8 @@ import {
   yearKey,
 } from "./time";
 
+import { CalendarCache } from "./calendarCache";
+
 const TOP_N = 20;
 
 interface MessageWithStats extends ParsedMessage {
@@ -74,6 +77,7 @@ interface BuildContext {
   conversations: ParsedConversation[];
   messages: MessageWithStats[];
   assets: AssetWithStats[];
+  aggregates?: ConversationAggregate[];
 }
 
 interface ConversationAggregate {
@@ -95,51 +99,82 @@ interface ConversationAggregate {
   isShared: boolean;
 }
 
-export function buildWrappedData(
+function buildContext(
   parsed: ParsedExport,
-  timezone = "UTC",
-): WrappedData {
-  const context: BuildContext = {
+  timezone: string,
+  cache: CalendarCache,
+): BuildContext {
+  return {
     parsed,
     timezone,
     conversations: parsed.conversations,
     messages: parsed.messages.map((message) => ({
       ...message,
       characterCount: visibleCharCount(message.text),
-      createdAt: firstDate(message.createTime, message.createTimeText),
-      calendarAt: (() => {
-        const date = firstDate(message.createTime, message.createTimeText);
-        return date ? calendarDate(date, timezone) : null;
-      })(),
+      ...cache.forMessage(message),
     })),
     assets: mergeAssets(parsed.assets).map((asset) => ({
       ...asset,
       category: classifyAsset(asset),
     })),
   };
+}
 
+export function buildOverviewData(
+  parsed: ParsedExport,
+  timezone: string,
+  cache: CalendarCache,
+): OverviewStats {
+  return overview(buildContext(parsed, timezone, cache));
+}
+
+export function buildWrappedData(
+  parsed: ParsedExport,
+  timezone = "UTC",
+  cache = new CalendarCache(timezone),
+  onProgress?: (completed: number) => void,
+): WrappedData {
+  const context = buildContext(parsed, timezone, cache);
+  onProgress?.(1);
   const timelineStats = timeline(context);
+  onProgress?.(2);
   const activityStats = activity(context.messages);
+  onProgress?.(3);
   const modelStatsValue = modelStats(context.messages);
-
+  onProgress?.(4);
+  const conversations = conversationStats(context);
+  onProgress?.(5);
+  const messages = messageStats(context.messages);
+  onProgress?.(6);
+  const assets = assetStats(context);
+  onProgress?.(7);
+  const language = languageStats(context.messages);
+  onProgress?.(8);
+  const frequent_words = frequentWords(context.messages, (fraction) =>
+    onProgress?.(8 + fraction),
+  );
+  onProgress?.(9);
+  const quality = qualityStats(context);
+  const highlightStats = highlights(
+    context,
+    timelineStats,
+    activityStats,
+    modelStatsValue,
+  );
+  onProgress?.(10);
   return {
     meta: meta(context),
     overview: overview(context),
     timeline: timelineStats,
     activity: activityStats,
-    conversations: conversationStats(context),
-    messages: messageStats(context.messages),
+    conversations,
+    messages,
     models: modelStatsValue,
-    assets: assetStats(context),
-    language: languageStats(context.messages),
-    frequent_words: frequentWords(context.messages),
-    quality: qualityStats(context),
-    highlights: highlights(
-      context,
-      timelineStats,
-      activityStats,
-      modelStatsValue,
-    ),
+    assets,
+    language,
+    frequent_words,
+    quality,
+    highlights: highlightStats,
   };
 }
 
@@ -441,13 +476,17 @@ function modelStats(messages: MessageWithStats[]): ModelStats {
 
   return {
     models,
-    most_used_model: models[0] || null,
+    most_used_model: models.find((model) => model.model !== "unknown") || null,
     monthly_primary_model: Object.fromEntries(
       [...monthly.entries()]
         .sort()
         .map(([month, counter]) => [
           month,
-          maxMapping(Object.fromEntries(counter))?.key || null,
+          maxMapping(
+            Object.fromEntries(
+              [...counter].filter(([name]) => name !== "unknown"),
+            ),
+          )?.key || null,
         ]),
     ),
   };
@@ -526,38 +565,40 @@ function languageStats(messages: MessageWithStats[]): LanguageStats {
   };
 }
 
-function frequentWords(messages: MessageWithStats[]): FrequentWordStats {
-  const monthly = new Map<string, Array<string | null>>();
-  messages.forEach((message) => {
-    if (!message.createdAt) {
-      return;
+function frequentWords(
+  messages: MessageWithStats[],
+  progress?: (fraction: number) => void,
+): FrequentWordStats {
+  const all = new Map<string, number>(),
+    user = new Map<string, number>(),
+    assistant = new Map<string, number>();
+  const monthly = new Map<string, Map<string, number>>();
+  const add = (counter: Map<string, number>, term: string) =>
+    counter.set(term, (counter.get(term) || 0) + 1);
+  const interval = Math.max(1000, Math.ceil(messages.length / 50));
+  messages.forEach((message, index) => {
+    const month = message.calendarAt ? monthKey(message.calendarAt) : null;
+    let monthCounter = month ? monthly.get(month) : undefined;
+    if (month && !monthCounter) {
+      monthCounter = new Map();
+      monthly.set(month, monthCounter);
     }
-    const month = monthKey(message.calendarAt!);
-    const texts = monthly.get(month) || [];
-    texts.push(message.text);
-    monthly.set(month, texts);
+    for (const term of textTerms(message.text || "")) {
+      add(all, term);
+      if (message.role === "user") add(user, term);
+      if (message.role === "assistant") add(assistant, term);
+      if (monthCounter) add(monthCounter, term);
+    }
+    if ((index + 1) % interval === 0) progress?.((index + 1) / messages.length);
   });
   return {
-    all: frequentTerms(
-      messages.map((message) => message.text),
-      50,
-    ),
-    user: frequentTerms(
-      messages
-        .filter((message) => message.role === "user")
-        .map((message) => message.text),
-      50,
-    ),
-    assistant: frequentTerms(
-      messages
-        .filter((message) => message.role === "assistant")
-        .map((message) => message.text),
-      50,
-    ),
+    all: topTerms(all, 50),
+    user: topTerms(user, 50),
+    assistant: topTerms(assistant, 50),
     monthly: Object.fromEntries(
-      [...monthly.entries()]
-        .sort()
-        .map(([month, texts]) => [month, frequentTerms(texts, 10)]),
+      [...monthly]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, counter]) => [month, topTerms(counter, 10)]),
     ),
   };
 }
@@ -688,7 +729,7 @@ function conversationAggregates(
 }
 
 function selectedAggregates(context: BuildContext): ConversationAggregate[] {
-  return conversationAggregates(context);
+  return (context.aggregates ??= conversationAggregates(context));
 }
 
 function metricBucket(): MetricBucket {

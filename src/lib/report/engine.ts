@@ -1,7 +1,8 @@
 import type { ParsedExport, ParseWarning } from "../../types/export";
 import { DEFAULT_OPTIONS, type ReportOptions } from "../../types/options";
 import type { TimelineBucket, WrappedData } from "../../types/wrapped";
-import { buildWrappedData } from "../stats/builder";
+import { CalendarCache } from "../stats/calendarCache";
+import { buildOverviewData, buildWrappedData } from "../stats/builder";
 import {
   availableYears,
   dateBounds,
@@ -54,10 +55,20 @@ export function fillMonths(
 export function buildReport(
   parsed: ParsedExport,
   input: ReportOptions = DEFAULT_OPTIONS,
+  settings: {
+    cache?: CalendarCache;
+    onProgress?: (completed: number, total: number) => void;
+  } = {},
 ): WrappedData {
   const options = validateOptions(input);
-  const scoped = scopeExport(parsed, options);
-  const report = buildWrappedData(scoped, options.timezone);
+  const cache =
+    settings.cache?.timezone === options.timezone
+      ? settings.cache
+      : new CalendarCache(options.timezone);
+  const progress = (completed: number) => settings.onProgress?.(completed, 12);
+  progress(0);
+  const scoped = scopeExport(parsed, options, cache);
+  const report = buildWrappedData(scoped, options.timezone, cache, progress);
   const warnings = scoped.warnings.map(({ code, message }) => ({
     code,
     message,
@@ -65,26 +76,27 @@ export function buildReport(
   fillMonths(report, options, warnings);
   report.meta.schema_version = 2;
   report.meta.parse_warning_count = warnings.length;
+  report.meta.table_counts.parse_warnings = warnings.length;
   report.options = options;
   report.warnings = warnings;
-  report.available_years = availableYears(parsed, options.timezone);
+  report.available_years = availableYears(parsed, options.timezone, cache);
   report.comparison = null;
   if (/^\d{4}$/.test(options.year) && Number(options.year) > 1) {
     const year = String(Number(options.year) - 1).padStart(4, "0");
-    const previous = buildWrappedData(
-      scopeExport(parsed, { ...options, year }),
-      options.timezone,
-    );
-    const count = previous.meta.table_counts.messages;
+    const previousScope = scopeExport(parsed, { ...options, year }, cache);
+    progress(11);
+    const previous = buildOverviewData(previousScope, options.timezone, cache);
+    const count = previousScope.messages.length;
     report.comparison = {
       year,
       has_data: count > 0,
-      overview: previous.overview,
+      overview: previous,
       message_count: count,
       message_growth_percent: count
         ? ((report.meta.table_counts.messages - count) / count) * 100
         : null,
     };
   }
+  progress(12);
   return report;
 }

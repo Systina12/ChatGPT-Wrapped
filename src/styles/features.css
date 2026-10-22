@@ -347,3 +347,11 @@ progress {
     scroll-behavior: auto !important;
   }
 }
+.list-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+  font-size: 0.85rem;
+}

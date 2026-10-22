@@ -5,6 +5,17 @@ import {
   useState,
   type ReactNode,
 } from "react";
+const numberFormats = new Map<string, Intl.NumberFormat>();
+function numberFormatter(locale: string, options?: Intl.NumberFormatOptions) {
+  const key = `${locale}:${JSON.stringify(Object.entries(options || {}).sort(([a], [b]) => a.localeCompare(b)))}`;
+  let formatter = numberFormats.get(key);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat(locale, options);
+    if (numberFormats.size >= 64) numberFormats.clear();
+    numberFormats.set(key, formatter);
+  }
+  return formatter;
+}
 export type Language = "zh" | "en";
 interface I18n {
   language: Language;
@@ -24,8 +35,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     language,
     setLanguage,
     t: (zh, en) => (language === "zh" ? zh : en),
-    number: (value, options) =>
-      new Intl.NumberFormat(locale, options).format(value),
+    number: (value, options) => numberFormatter(locale, options).format(value),
     date: (value, timezone = "UTC") => {
       if (!value) return "—";
       const date = new Date(value);

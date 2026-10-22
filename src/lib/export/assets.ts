@@ -73,9 +73,11 @@ export function classifyAsset(asset: ParsedAsset): AssetCategory {
       ? (asset.raw as Record<string, unknown>)
       : {};
   const type = String(raw.content_type || "").toLowerCase();
-  const names = [asset.fileExtension, asset.displayName, asset.localPath].map(
-    (v) => (v || "").toLowerCase().split(/[?#]/)[0].split(".").pop(),
-  );
+  const names = [
+    asset.fileExtension?.toLowerCase().replace(/^\./, ""),
+    pathExtension(asset.displayName),
+    pathExtension(asset.localPath),
+  ];
   if (
     mime.startsWith("audio/") ||
     type.includes("audio") ||

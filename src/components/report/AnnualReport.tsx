@@ -10,6 +10,7 @@ import type { WrappedData } from "../../types/wrapped";
 import { useI18n } from "../../lib/report/i18n";
 import { ANNUAL_CHAPTERS } from "./annualChapters";
 import { AnnualChapterDetails } from "./AnnualChapterDetails";
+import { ActivityCalendar } from "./ActivityCalendar";
 export type ReportDestination = "statistics" | "warnings" | "json" | "share";
 interface Props {
   data: WrappedData;
@@ -44,6 +45,9 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
   }, []);
   useEffect(() => {
     dialog.current?.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    dialog.current
+      ?.querySelector(".annual-progress [aria-current]")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
     heading.current?.focus({ preventScroll: true });
   }, [page]);
   function keyDown(event: KeyboardEvent) {
@@ -278,24 +282,7 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
                   </strong>
                   <span>{t("最长连续探索", "your longest active streak")}</span>
                 </div>
-                <div
-                  className="annual-calendar"
-                  role="group"
-                  tabIndex={0}
-                  aria-label={t(
-                    "最近十周的日历活动",
-                    "Calendar activity in the latest ten weeks",
-                  )}
-                >
-                  {recentDays.map((day) => (
-                    <span
-                      key={day.key}
-                      data-active={day.count > 0}
-                      title={`${day.key}: ${number(day.count)}`}
-                      aria-label={`${day.key}: ${number(day.count)}`}
-                    />
-                  ))}
-                </div>
+                <ActivityCalendar days={recentDays} />
                 <p className="annual-footnote">
                   {number(activeDays.length)} {t("个活跃日", "active days")} ·{" "}
                   {lastDay
@@ -319,14 +306,22 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
                   )}
                 </p>
                 <div className="annual-model">
-                  {data.models.most_used_model?.model || "—"}
+                  {data.models.most_used_model?.model !== "unknown"
+                    ? data.models.most_used_model?.model || "—"
+                    : "—"}
                 </div>
                 <p className="annual-model-caption">
                   {t("最常使用的助手模型", "Your most-used assistant model")}
                 </p>
                 <div className="annual-pairs">
                   <div>
-                    <b>{number(data.models.models.length)}</b>
+                    <b>
+                      {number(
+                        data.models.models.filter(
+                          (model) => model.model !== "unknown",
+                        ).length,
+                      )}
+                    </b>
                     <span>{t("种助手模型", "assistant models")}</span>
                   </div>
                   <div>
@@ -334,6 +329,16 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
                     <span>{t("个对话附件", "conversation attachments")}</span>
                   </div>
                 </div>
+                {data.models.models.some(
+                  (model) => model.model === "unknown",
+                ) && (
+                  <p className="annual-footnote">
+                    {t(
+                      "部分消息缺少模型信息，未计入已知模型种数。",
+                      "Some messages lack model metadata and are excluded from the known model count.",
+                    )}
+                  </p>
+                )}
               </>
             )}
             {chapter.id === "words" && (

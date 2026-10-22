@@ -15,7 +15,11 @@ import type {
   SourceFile,
 } from "../../types/export";
 import { mergeAssets, pathExtension } from "./assets";
-import { readJsonEntry, type ImportProgress } from "./fileInput";
+import {
+  isRelevantJson,
+  readJsonEntry,
+  type ImportProgress,
+} from "./fileInput";
 
 export async function parseExportEntries(
   entries: ExportEntry[],
@@ -32,6 +36,7 @@ class ExportParser {
   private readonly libraryByFileName = new Map<string, JsonObject>();
   private readonly libraryByFileId = new Map<string, JsonObject>();
   private readonly conversations: ParsedConversation[] = [];
+  private readonly conversationRows = new Map<string, number>();
   private readonly messages = new Map<string, ParsedMessage>();
   private readonly assets: ParsedAsset[] = [];
   private readonly libraryFiles: ParsedLibraryFile[] = [];
@@ -44,6 +49,7 @@ class ExportParser {
   private rowId = 1;
 
   private completed = 0;
+  private readonly parseTotal: number;
   constructor(
     entries: ExportEntry[],
     private readonly onProgress?: (progress: ImportProgress) => void,
@@ -51,6 +57,21 @@ class ExportParser {
     this.entries = [...entries].sort((left, right) =>
       left.path.localeCompare(right.path),
     );
+    const optionalNames = new Set<string>();
+    let conversations = 0;
+    for (const entry of this.entries) {
+      if (!isRelevantJson(entry.path)) continue;
+      if (/^conversations(?:-\d+)?\.json$/.test(entry.name)) conversations++;
+      else {
+        if (optionalNames.has(entry.name))
+          this.warn(
+            "duplicate_export_file",
+            `Multiple ${entry.name}; using the first path / 重复附属文件，采用按路径排序的第一个`,
+          );
+        optionalNames.add(entry.name);
+      }
+    }
+    this.parseTotal = conversations + optionalNames.size;
   }
 
   async parse(): Promise<ParsedExport> {
@@ -201,15 +222,22 @@ class ExportParser {
           );
           return;
         }
-        const fallbackId = `${file.name.replace(/\.json$/, "")}:${index}`;
-        if (!this.insertConversationMessages(conversation, fallbackId)) {
+        const fallbackId = `${file.path.replace(/\.json$/, "")}:${index}`;
+        const id = conversationIdFor(conversation, fallbackId);
+        const row = this.conversationRows.get(id);
+        const previous =
+          row === undefined ? undefined : this.conversations[row];
+        const merged = previous
+          ? this.mergeConversation(previous.raw as JsonObject, conversation, id)
+          : conversation;
+        if (!this.insertConversationMessages(merged, fallbackId)) {
           this.warn(
             "invalid_conversation",
             `${file.name}[${index}] contains only damaged message data`,
           );
           return;
         }
-        this.insertConversation(conversation, fallbackId);
+        this.insertConversation(merged, fallbackId);
         usable++;
       });
       if (data.length === 0 || usable > 0) validFiles++;
@@ -404,8 +432,9 @@ class ExportParser {
     fallbackId: string,
   ): void {
     const conversationId = conversationIdFor(conversation, fallbackId);
-    this.conversations.push({
-      rowId: this.rowId++,
+    const row = this.conversationRows.get(conversationId);
+    const record: ParsedConversation = {
+      rowId: row === undefined ? this.rowId++ : this.conversations[row].rowId,
       conversationId,
       source: "conversation",
       title: asStr(conversation.title),
@@ -419,7 +448,60 @@ class ExportParser {
       isStarred: asBool(conversation.is_starred),
       isShared: false,
       raw: conversation,
-    });
+    };
+    if (row === undefined) {
+      this.conversationRows.set(conversationId, this.conversations.length);
+      this.conversations.push(record);
+    } else this.conversations[row] = record;
+  }
+
+  private mergeConversation(
+    previous: JsonObject,
+    next: JsonObject,
+    id: string,
+  ): JsonObject {
+    this.warn(
+      "duplicate_conversation",
+      `Overlapping conversation merged / 重叠会话已合并: ${id}`,
+    );
+    const merged = { ...previous };
+    for (const [key, value] of Object.entries(next))
+      if (value !== null && value !== undefined && value !== "")
+        Object.defineProperty(merged, key, {
+          value,
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+    const mapping = { ...(isObject(previous.mapping) ? previous.mapping : {}) };
+    let conflict = false;
+    if (isObject(next.mapping))
+      for (const [key, node] of Object.entries(next.mapping)) {
+        const old = Object.hasOwn(mapping, key) ? mapping[key] : undefined;
+        if (old !== undefined && JSON.stringify(old) !== JSON.stringify(node))
+          conflict = true;
+        // Keep usable history when a later shard contains a damaged/empty duplicate.
+        const hasMessage = (value: unknown) =>
+          isObject(value) &&
+          isObject(value.message) &&
+          isObject(value.message.author) &&
+          typeof value.message.author.role === "string" &&
+          isObject(value.message.content);
+        if (hasMessage(old) && !hasMessage(node)) continue;
+        Object.defineProperty(mapping, key, {
+          value: node,
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+      }
+    merged.mapping = mapping;
+    if (conflict)
+      this.warn(
+        "conflicting_conversation",
+        `Conflicting nodes use the later usable record / 冲突节点采用后一个可用记录: ${id}`,
+      );
+    return merged;
   }
 
   private insertConversationMessages(
@@ -736,7 +818,7 @@ class ExportParser {
       this.onProgress?.({
         phase: "parsing",
         completed: ++this.completed,
-        total: this.entries.filter((e) => e.name.endsWith(".json")).length,
+        total: this.parseTotal,
       });
       return await readJsonEntry(entry);
     } catch (error) {
@@ -832,7 +914,7 @@ function guessMime(localPath: string): string | null {
     webm: "video/webm",
     webp: "image/webp",
   };
-  return byExtension[extension] || null;
+  return Object.hasOwn(byExtension, extension) ? byExtension[extension] : null;
 }
 
 function isObject(value: unknown): value is JsonObject {

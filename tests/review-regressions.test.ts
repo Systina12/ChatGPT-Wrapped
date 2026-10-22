@@ -403,7 +403,13 @@ function streamOf(
   let paused = false;
   const callbacks: Record<string, (value?: unknown) => void> = {};
   return {
-    on(event: string, callback: (value?: never) => void) {
+    on(
+      event: string,
+      callback:
+        | ((value: Uint8Array) => void)
+        | ((error: Error) => void)
+        | (() => void),
+    ) {
       callbacks[event] = callback as (value?: unknown) => void;
     },
     pause() {

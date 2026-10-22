@@ -6,7 +6,8 @@ import type {
   ParseWarning,
 } from "../../types/export";
 import { DEFAULT_OPTIONS, type ReportOptions } from "../../types/options";
-import { calendarDate, dayKey, isCalendarDay, toDate } from "./time";
+import { dayKey, isCalendarDay, toDate } from "./time";
+import { CalendarCache } from "./calendarCache";
 
 export function validateOptions(value: unknown): ReportOptions {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -38,7 +39,12 @@ export function validateOptions(value: unknown): ReportOptions {
     (options.end && !isCalendarDay(options.end))
   )
     throw new Error("Invalid calendar date / 日期无效");
-  if (options.start && options.end && options.start > options.end)
+  if (
+    options.year === "custom" &&
+    options.start &&
+    options.end &&
+    options.start > options.end
+  )
     throw new Error("Start date must precede end / 起始日期不能晚于结束日期");
   if (options.year === "custom" && (!options.start || !options.end))
     throw new Error(
@@ -47,8 +53,8 @@ export function validateOptions(value: unknown): ReportOptions {
   return {
     timezone: options.timezone,
     year: options.year,
-    start: options.start,
-    end: options.end,
+    start: options.year === "custom" ? options.start : "",
+    end: options.year === "custom" ? options.end : "",
     roles: options.roles,
     branches: options.branches,
     includeGroups: options.includeGroups,
@@ -66,11 +72,12 @@ export function messageDate(message: ParsedMessage): Date | null {
 export function availableYears(
   parsed: ParsedExport,
   timezone: string,
+  cache = new CalendarCache(timezone),
 ): string[] {
   const years = new Set<string>();
   for (const message of parsed.messages) {
-    const date = messageDate(message);
-    if (date) years.add(dayKey(calendarDate(date, timezone)).slice(0, 4));
+    const date = cache.forMessage(message).calendarAt;
+    if (date) years.add(dayKey(date).slice(0, 4));
   }
   return [...years].sort().reverse();
 }
@@ -108,6 +115,7 @@ function currentNodes(
 export function scopeExport(
   parsed: ParsedExport,
   input: ReportOptions = DEFAULT_OPTIONS,
+  cache = new CalendarCache(input.timezone),
 ): ParsedExport {
   const options = validateOptions(input);
   const bounds = dateBounds(options);
@@ -141,13 +149,13 @@ export function scopeExport(
         message.role !== "assistant")
     )
       return false;
-    const date = messageDate(message);
+    const { createdAt: date, calendarAt } = cache.forMessage(message);
     if (bounds) {
       if (!date) {
         undated++;
         return false;
       }
-      const key = dayKey(calendarDate(date, options.timezone));
+      const key = dayKey(calendarAt!);
       if (key < bounds[0] || key > bounds[1]) return false;
     }
     if (date && message.conversationId) {

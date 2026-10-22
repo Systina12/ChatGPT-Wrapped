@@ -153,9 +153,16 @@ export function frequentTerms(
     if (!text) {
       continue;
     }
-    englishTerms(text).forEach((term) => increment(counter, term));
-    chineseTerms(text).forEach((term) => increment(counter, term));
+    for (const term of textTerms(text)) increment(counter, term);
   }
+  return topTerms(counter, limit);
+}
+
+export function textTerms(text: string): string[] {
+  return [...englishTerms(text), ...chineseTerms(text)];
+}
+
+export function topTerms(counter: Map<string, number>, limit: number) {
   return [...counter.entries()]
     .sort(
       (left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
