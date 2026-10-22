@@ -8,6 +8,8 @@ import {
 import { CuriosityMark } from "../ui/CuriosityMark";
 import type { WrappedData } from "../../types/wrapped";
 import { useI18n } from "../../lib/report/i18n";
+import { ANNUAL_CHAPTERS } from "./annualChapters";
+import { AnnualChapterDetails } from "./AnnualChapterDetails";
 export type ReportDestination = "statistics" | "warnings" | "json" | "share";
 interface Props {
   data: WrappedData;
@@ -22,15 +24,8 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
   const start = useRef<{ x: number; y: number } | null>(null);
   const zone = data.options?.timezone || "UTC";
   const count = data.meta.table_counts.messages;
-  const titles = [
-    t("好奇心，有迹可循。", "Curiosity leaves a trace."),
-    t("问题，连接了可能。", "One question opens a world."),
-    t("灵感有自己的时区。", "Inspiration keeps its own time."),
-    t("每一次出现，都算数。", "You kept showing up."),
-    t("一起，把想法走得更远。", "A little further, together."),
-    t("这些词，是你的坐标。", "Your words. Your coordinates."),
-    t("把这一页，留给自己。", "Keep a little of this year."),
-  ];
+  const titles = ANNUAL_CHAPTERS.map((chapter) => t(chapter.zh, chapter.en));
+  const chapter = ANNUAL_CHAPTERS[page];
   const total = titles.length;
   const go = (next: number) => setPage(Math.min(total - 1, Math.max(0, next)));
   useEffect(() => {
@@ -83,10 +78,24 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
     "周一,周二,周三,周四,周五,周六,周日",
     "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
   ).split(",");
-  const maxMonth = data.timeline.months.reduce(
-    (max, item) => Math.max(max, item.message_count),
-    1,
+  const activeDays = data.timeline.days.filter((day) => day.message_count > 0);
+  const dayCounts = new Map(
+    data.timeline.days.map((day) => [day.key, day.message_count]),
   );
+  const lastDay = activeDays.reduce(
+    (latest, day) => (day.key > latest ? day.key : latest),
+    "",
+  );
+  const recentDays = lastDay
+    ? Array.from({ length: 70 }, (_, index) => {
+        const key = new Date(
+          Date.parse(`${lastDay}T00:00:00Z`) - (69 - index) * 86400000,
+        )
+          .toISOString()
+          .slice(0, 10);
+        return { key, count: dayCounts.get(key) || 0 };
+      })
+    : [];
   const words = data.frequent_words.user.slice(0, 12);
   return (
     <dialog
@@ -99,7 +108,9 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
       }}
       onKeyDown={keyDown}
     >
-      <div className={`annual-shell annual-theme-${page % 3}`}>
+      <div
+        className={`annual-shell annual-theme-${chapter.theme} annual-story-${chapter.id}`}
+      >
         <header className="annual-topbar">
           <span className="annual-brand">CHATGPT / WRAPPED</span>
           <div className="annual-utilities">
@@ -135,7 +146,7 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
           ))}
         </div>
         <section
-          className={`annual-page annual-page-${page}`}
+          className={`annual-page annual-page-${page} annual-chapter-${chapter.id}`}
           key={page}
           onTouchStart={(event) => {
             const touch = event.touches[0];
@@ -161,7 +172,7 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
             <h2 id="annual-heading" tabIndex={-1} ref={heading}>
               {titles[page]}
             </h2>
-            {page === 0 && (
+            {chapter.id === "opening" && (
               <>
                 <p className="annual-lede">
                   {t(
@@ -186,7 +197,7 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
                 </p>
               </>
             )}
-            {page === 1 && (
+            {chapter.id === "questions" && (
               <>
                 <p className="annual-lede">
                   {t(
@@ -214,7 +225,7 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
                 </div>
               </>
             )}
-            {page === 2 && (
+            {chapter.id === "hours" && (
               <>
                 <p className="annual-lede">
                   {t(
@@ -252,7 +263,7 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
                 </div>
               </>
             )}
-            {page === 3 && (
+            {chapter.id === "streak" && (
               <>
                 <p className="annual-lede">
                   {t(
@@ -268,35 +279,38 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
                   <span>{t("最长连续探索", "your longest active streak")}</span>
                 </div>
                 <div
-                  className="annual-months"
+                  className="annual-calendar"
                   role="group"
                   tabIndex={0}
-                  aria-label={t("最近月份活动", "Recent monthly activity")}
+                  aria-label={t(
+                    "最近十周的日历活动",
+                    "Calendar activity in the latest ten weeks",
+                  )}
                 >
-                  {data.timeline.months.slice(-12).map((month) => (
-                    <div
-                      key={month.key}
-                      tabIndex={0}
-                      aria-label={`${month.key}: ${number(month.message_count)}`}
-                    >
-                      <span
-                        style={{
-                          height: `${Math.max(month.message_count ? 4 : 0, (month.message_count / maxMonth) * 100)}%`,
-                        }}
-                      />
-                      <small>{month.key.slice(5)}</small>
-                    </div>
+                  {recentDays.map((day) => (
+                    <span
+                      key={day.key}
+                      data-active={day.count > 0}
+                      title={`${day.key}: ${number(day.count)}`}
+                      aria-label={`${day.key}: ${number(day.count)}`}
+                    />
                   ))}
                 </div>
                 <p className="annual-footnote">
-                  {t(
-                    "以上为最近十二个已统计月份，完整月份可在统计中查看。",
-                    "Showing the latest twelve report months. Explore the complete timeline in statistics.",
-                  )}
+                  {number(activeDays.length)} {t("个活跃日", "active days")} ·{" "}
+                  {lastDay
+                    ? t(
+                        `日历为截至 ${lastDay} 的十周活动。`,
+                        `Calendar: ten weeks ending ${lastDay}.`,
+                      )
+                    : t(
+                        "这个范围内还没有活动。",
+                        "No activity in this scope yet.",
+                      )}
                 </p>
               </>
             )}
-            {page === 4 && (
+            {chapter.id === "models" && (
               <>
                 <p className="annual-lede">
                   {t(
@@ -322,7 +336,7 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
                 </div>
               </>
             )}
-            {page === 5 && (
+            {chapter.id === "words" && (
               <>
                 <p className="annual-lede">
                   {t(
@@ -360,7 +374,8 @@ export function AnnualReport({ data, onClose, onExplore }: Props) {
                 </p>
               </>
             )}
-            {page === 6 && (
+            <AnnualChapterDetails chapter={chapter.id} data={data} />
+            {chapter.id === "closing" && (
               <>
                 <p className="annual-lede">
                   {t(

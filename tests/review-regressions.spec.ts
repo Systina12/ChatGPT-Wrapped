@@ -22,20 +22,24 @@ test("large overview numbers stay on one line within every metric card", async (
   await expect(page.getByTestId("metric-characters")).toHaveText("11,626,912");
   for (const width of [320, 393, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
-    const measurements = await page.locator(".metric strong").evaluateAll((items) =>
-      items.map((element) => {
-        const range = document.createRange();
-        range.selectNodeContents(element);
-        return {
-          lines: range.getClientRects().length,
-          textWidth: range.getBoundingClientRect().width,
-          availableWidth: element.clientWidth,
-        };
-      }),
-    );
+    const measurements = await page
+      .locator(".metric strong")
+      .evaluateAll((items) =>
+        items.map((element) => {
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          return {
+            lines: range.getClientRects().length,
+            textWidth: range.getBoundingClientRect().width,
+            availableWidth: element.clientWidth,
+          };
+        }),
+      );
     for (const measurement of measurements) {
       expect(measurement.lines).toBe(1);
-      expect(measurement.textWidth).toBeLessThanOrEqual(measurement.availableWidth);
+      expect(measurement.textWidth).toBeLessThanOrEqual(
+        measurement.availableWidth,
+      );
     }
   }
 });
@@ -77,6 +81,16 @@ test("prototype-named feedback labels render without crashing the report", async
   await expect(
     page.locator(".count-list dt").filter({ hasText: "__proto__" }),
   ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Enter my annual report", exact: true })
+    .click();
+  await page
+    .getByRole("button", {
+      name: "Page 13: Your feedback has an echo.",
+      exact: true,
+    })
+    .click();
+  await expect(page.locator(".annual-receipt dt")).toHaveText("__proto__");
   expect(errors).toEqual([]);
 });
 test("negative attachment sizes become visible warnings and the report still saves", async ({
@@ -201,7 +215,8 @@ test("short viewport page changes return headings to the visible top", async ({
   await page
     .getByRole("button", { name: "Enter my annual report", exact: true })
     .click();
-  for (let index = 0; index < 6; index++) {
+  const count = await page.locator(".annual-progress button").count();
+  for (let index = 0; index < count - 1; index++) {
     await page
       .getByRole("button", { name: "Next report page", exact: true })
       .click();

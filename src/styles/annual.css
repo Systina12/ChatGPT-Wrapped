@@ -733,7 +733,7 @@ button:hover:not(:disabled) {
   left: 0;
   font-size: 0.55rem;
 }
-.annual-page-3 .annual-main-number > strong {
+.annual-story-streak .annual-main-number > strong {
   font-size: clamp(4rem, 10vw, 8rem);
 }
 .annual-navigation {
@@ -1097,7 +1097,7 @@ button:hover:not(:disabled) {
     height: 100px;
     margin-top: 25px;
   }
-  .annual-page-3 .annual-main-number > strong {
+  .annual-story-streak .annual-main-number > strong {
     font-size: 5rem;
   }
   .annual-navigation {

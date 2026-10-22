@@ -59,7 +59,11 @@ Source archives must come from committed files (`git archive`), include newly ad
 
 ## Annual report presentation
 
-The first report screen is a cream/black/lime data overview. **Enter my annual report / 进入我的年度报告** opens seven pages in purple/lime, with live statistics rather than example numbers. Use previous/next buttons, chapter markers, left/right arrows, Page Up/Down, Home/End, or a horizontal swipe. Escape closes the report and returns focus to the opener. Vertical gestures scroll normally. The native modal contains focus; decorative and entrance animations respect `prefers-reduced-motion`.
+The first report screen is a cream/black/lime data overview. **Enter my annual report / 进入我的年度报告** opens fourteen pages in purple/lime/ink/paper, with live statistics rather than example numbers. Use previous/next buttons, chapter markers, left/right arrows, Page Up/Down, Home/End, or a horizontal swipe. Escape closes the report and returns focus to the opener. Vertical gestures scroll normally. The native modal contains focus; decorative and entrance animations respect `prefers-reduced-motion`.
+
+The story covers message totals, your questions, active hours, weekly rhythm, active streaks, monthly activity, models, longest conversations, message lengths, attachments, keywords, saved conversation states, feedback and sharing. The weekly bars, calendar, monthly skyline, conversation tickets, length ladder, file cards, keepsake and feedback receipt use selected report values. Empty scopes and older summaries remain supported. Titles stay local; attachment filenames and message excerpts are excluded from the story.
+
+See the [fourteen-page design and data mapping](docs/annual-report-14-pages.md).
 
 Complete statistics, warnings and JSON remain available from the report's utility buttons. The final page opens the share-card controls, retaining their default privacy settings. The locally generated card's own preview is independent of the report's page navigation.
 

@@ -21,6 +21,7 @@ content = subprocess.check_output(command, cwd=root)
 required = {"src/lib/report/engine.ts", "src/lib/report/restore.ts", "src/lib/report/storage.ts", "src/lib/report/i18n.tsx", "src/lib/report/share.ts", "src/lib/stats/scope.ts", "src/types/options.ts", "src/components/report/ReportControls.tsx", "src/components/report/ShareCard.tsx", "src/styles/features.css", "tests/data.test.ts", "tests/features.test.ts", "tests/import.spec.ts", "tests/features.spec.ts", "playwright.config.ts", ".github/workflows/checks.yml", "package-lock.json"}
 if args.require_annual:
     required.update({"src/components/report/AnnualReport.tsx", "src/components/ui/CuriosityMark.tsx", "src/styles/annual.css", "tests/annual.spec.ts"})
+    required.update({"src/components/report/AnnualChapterDetails.tsx", "src/components/report/annualChapters.ts", "src/styles/annual-chapters.css", "docs/annual-report-14-pages.md"})
 with ZipFile(io.BytesIO(content)) as archive:
     names = set(archive.namelist())
     missing = required - names

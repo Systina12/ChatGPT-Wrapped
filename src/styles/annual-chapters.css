@@ -1,0 +1,643 @@
+/* Each chapter gives its statistic a different visual form. */
+.annual-theme-3 {
+  --story-bg: #f3f1e6;
+  --story-ink: #242128;
+  --story-accent: #b79ae9;
+}
+.annual-progress button {
+  height: 24px;
+  min-height: 24px;
+  padding: 11px 0;
+}
+.annual-split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: 55px;
+  max-width: 1120px;
+  margin-top: 34px;
+}
+.annual-feature-number {
+  min-width: 0;
+}
+.annual-feature-number > strong {
+  display: block;
+  font-size: clamp(3.8rem, 8.5vw, 8rem);
+  line-height: 1.05;
+  font-weight: 800;
+  letter-spacing: -0.075em;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.annual-feature-number > strong > small {
+  font-size: 0.22em;
+  letter-spacing: 0;
+  margin-left: 10px;
+}
+.annual-feature-number > span {
+  display: block;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  margin-top: 12px;
+  max-width: 310px;
+}
+.annual-feature-number > p {
+  font-size: 0.8rem;
+  line-height: 2;
+  margin: 25px 0 0;
+  opacity: 0.75;
+}
+.annual-story-week .orbit-art,
+.annual-story-months .orbit-art,
+.annual-story-dialogues .orbit-art,
+.annual-story-expression .orbit-art,
+.annual-story-attachments .orbit-art,
+.annual-story-saved .orbit-art,
+.annual-story-feedback .orbit-art,
+.annual-story-week .annual-asterisk,
+.annual-story-months .annual-asterisk,
+.annual-story-dialogues .annual-asterisk,
+.annual-story-expression .annual-asterisk,
+.annual-story-attachments .annual-asterisk,
+.annual-story-saved .annual-asterisk,
+.annual-story-feedback .annual-asterisk {
+  display: none;
+}
+.annual-story-week .annual-art,
+.annual-story-expression .annual-art {
+  background-image: linear-gradient(90deg, currentColor 1px, transparent 1px);
+  background-size: calc(100% / 7) 100%;
+  opacity: 0.035;
+}
+.annual-week-chart {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+.annual-week-chart > div {
+  display: grid;
+  gap: 12px;
+  text-align: center;
+  min-width: 0;
+}
+.annual-week-track {
+  display: flex;
+  align-items: end;
+  height: 245px;
+  border-radius: 50px;
+  background: #2421280a;
+  overflow: hidden;
+}
+.annual-week-track > i {
+  display: block;
+  width: 100%;
+  background: var(--story-accent);
+  border-radius: inherit;
+  transform-origin: bottom;
+  animation: chapter-grow 650ms both;
+}
+.annual-week-chart > div:nth-child(2n) i {
+  background: var(--story-ink);
+}
+.annual-week-chart b {
+  font-size: 0.72rem;
+}
+.annual-week-chart small {
+  font-size: 0.58rem;
+  overflow-wrap: anywhere;
+}
+.annual-calendar {
+  display: grid;
+  grid-template-rows: repeat(7, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 8px;
+  width: min(360px, 100%);
+  margin: 32px 0 0;
+}
+.annual-calendar span {
+  aspect-ratio: 1;
+  border-radius: 4px;
+  background: #211b2e16;
+}
+.annual-calendar span[data-active="true"] {
+  background: var(--story-ink);
+  animation: chapter-tile 600ms both;
+}
+.annual-story-streak .annual-asterisk {
+  bottom: 15%;
+}
+.annual-month-headline {
+  display: flex;
+  align-items: end;
+  gap: 35px;
+  margin: 28px 0 0;
+}
+.annual-month-headline > strong {
+  font-size: clamp(3.2rem, 7vw, 6rem);
+  line-height: 1;
+  letter-spacing: -0.065em;
+}
+.annual-month-headline > span {
+  font-size: 0.78rem;
+  line-height: 1.8;
+}
+.annual-landscape {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: end;
+  gap: 4px;
+  max-width: 1040px;
+  margin-top: 28px;
+}
+.annual-landscape > div {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  text-align: center;
+}
+.annual-landscape-track {
+  height: 175px;
+  display: flex;
+  align-items: end;
+  border-bottom: 1px solid currentColor;
+}
+.annual-landscape i {
+  display: block;
+  width: 100%;
+  background: var(--story-ink);
+  opacity: 0.45;
+  clip-path: polygon(0 100%, 0 32%, 50% 0, 100% 32%, 100% 100%);
+  transform-origin: bottom;
+  animation: chapter-grow 800ms both;
+}
+.annual-landscape [data-peak="true"] i {
+  background: var(--story-accent);
+  opacity: 1;
+}
+.annual-landscape > div > span {
+  font-size: 0.65rem;
+}
+.annual-dialogue-layout {
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+}
+.annual-tickets {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+.annual-tickets li {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: #f5f1ff;
+  border: 1px solid #211b2e;
+  border-radius: 0 20px 20px 0;
+  box-shadow: 5px 5px 0 #211b2e20;
+}
+.annual-ticket-rank {
+  font-size: 0.7rem;
+  border-right: 1px dashed currentColor;
+  padding: 15px 8px 15px 0;
+  opacity: 0.6;
+}
+.annual-tickets strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.annual-tickets small {
+  display: block;
+  font-size: 0.62rem;
+  opacity: 0.65;
+  margin-top: 5px;
+}
+.annual-tickets li > b {
+  font-size: 1.8rem;
+  letter-spacing: -0.06em;
+  text-align: right;
+}
+.annual-tickets li > b small {
+  letter-spacing: 0;
+}
+.annual-length-chart {
+  display: grid;
+  gap: 13px;
+}
+.annual-length-chart > div {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 68px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  position: relative;
+}
+.annual-length-chart span,
+.annual-length-chart b {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.annual-length-chart i {
+  display: block;
+  height: 17px;
+  border-radius: 2px;
+  background: var(--story-ink);
+  transform-origin: left;
+  animation: chapter-reveal 650ms both;
+}
+.annual-length-chart > div:nth-child(2n) i {
+  background: var(--story-accent);
+}
+.annual-length-chart b {
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.annual-length-chart > small {
+  font-size: 0.6rem;
+  opacity: 0.6;
+  margin-top: 10px;
+}
+.annual-file-deck {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 10px;
+  min-width: 0;
+}
+.annual-file {
+  min-width: 0;
+  width: 155px;
+  flex: 0 1 155px;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 22px;
+  border: 1px solid #211b2e;
+  color: #211b2e;
+  background: #f6f1e6;
+  box-shadow: 7px 8px 0 #211b2e20;
+  transform: rotate(-9deg);
+}
+.annual-file + .annual-file {
+  margin-left: 8px;
+}
+.annual-file-voice {
+  background: #bfa6f3;
+  transform: translateY(-20px) rotate(3deg);
+  z-index: 1;
+}
+.annual-file-file {
+  transform: rotate(12deg);
+}
+.annual-file svg {
+  width: 42px;
+  height: 42px;
+  stroke-width: 1.3;
+}
+.annual-file span {
+  font-size: 0.72rem;
+  margin-top: auto;
+}
+.annual-file strong {
+  font-size: clamp(1rem, 2vw, 2rem);
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
+}
+.annual-keepsake {
+  width: min(330px, 100%);
+  justify-self: center;
+  border: 1px solid currentColor;
+  background: #d6ff43;
+  box-shadow: 10px 10px 0 #211b2e;
+  transform: rotate(6deg);
+  display: grid;
+  gap: 20px;
+  padding: 30px;
+}
+.annual-keepsake > span,
+.annual-keepsake > small {
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+}
+.annual-keepsake > svg {
+  width: 100px;
+  height: 100px;
+  stroke-width: 1;
+  fill: #211b2e;
+}
+.annual-keepsake > b {
+  font-size: 1.5rem;
+  white-space: pre-line;
+  letter-spacing: -0.05em;
+}
+.annual-receipt {
+  min-width: 0;
+  max-width: 390px;
+  width: 100%;
+  justify-self: center;
+  background: #fffef6;
+  box-shadow: 8px 8px 0 #2421281a;
+  padding: 26px 30px 35px;
+  transform: rotate(-4deg);
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% 96%,
+    95% 100%,
+    90% 96%,
+    85% 100%,
+    80% 96%,
+    75% 100%,
+    70% 96%,
+    65% 100%,
+    60% 96%,
+    55% 100%,
+    50% 96%,
+    45% 100%,
+    40% 96%,
+    35% 100%,
+    30% 96%,
+    25% 100%,
+    20% 96%,
+    15% 100%,
+    10% 96%,
+    5% 100%,
+    0 96%
+  );
+}
+.annual-receipt > p,
+.annual-receipt > small {
+  font-size: 0.63rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.annual-receipt-mark {
+  font-size: 4.5rem;
+  line-height: 1;
+  margin-bottom: 20px;
+}
+.annual-receipt dl {
+  border-top: 1px dashed currentColor;
+  margin: 0 0 18px;
+}
+.annual-receipt dl > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 15px;
+  border-bottom: 1px dashed #24212840;
+  padding: 12px 0;
+  font-size: 0.85rem;
+}
+.annual-receipt dt {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.annual-receipt dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+@keyframes chapter-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes chapter-reveal {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes chapter-tile {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (max-width: 900px) {
+  .annual-split {
+    gap: 30px;
+  }
+  .annual-file {
+    padding: 18px;
+    min-height: 190px;
+  }
+}
+@media (max-width: 600px) {
+  .annual-split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 25px;
+    margin-top: 25px;
+  }
+  .annual-feature-number > strong {
+    font-size: 4.8rem;
+  }
+  .annual-feature-number > span {
+    font-size: 0.72rem;
+    margin-top: 7px;
+  }
+  .annual-feature-number > p {
+    font-size: 0.68rem;
+    line-height: 1.8;
+    margin-top: 12px;
+  }
+  .annual-story-week .annual-split {
+    grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+    gap: 15px;
+  }
+  .annual-story-week .annual-feature-number > strong {
+    font-size: 2.5rem;
+    letter-spacing: -0.06em;
+  }
+  .annual-week-chart {
+    gap: 5px;
+  }
+  .annual-week-track {
+    height: 185px;
+  }
+  .annual-week-chart b {
+    font-size: 0.53rem;
+  }
+  .annual-week-chart small {
+    font-size: 0.48rem;
+  }
+  .annual-week-chart > div {
+    gap: 9px;
+  }
+  .annual-calendar {
+    gap: 5px;
+    max-width: 300px;
+    margin-top: 25px;
+  }
+  .annual-calendar span {
+    border-radius: 2px;
+  }
+  .annual-month-headline {
+    gap: 20px;
+    align-items: center;
+  }
+  .annual-month-headline > strong {
+    font-size: 3.5rem;
+  }
+  .annual-month-headline > span {
+    font-size: 0.64rem;
+  }
+  .annual-landscape-track {
+    height: 150px;
+  }
+  .annual-landscape {
+    gap: 3px;
+    margin-top: 35px;
+  }
+  .annual-landscape > div > span {
+    font-size: 0.53rem;
+  }
+  .annual-tickets {
+    gap: 9px;
+  }
+  .annual-tickets li {
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 0 12px 12px 0;
+  }
+  .annual-ticket-rank {
+    font-size: 0.55rem;
+    padding: 7px 5px 7px 0;
+  }
+  .annual-tickets strong {
+    font-size: 0.73rem;
+  }
+  .annual-tickets small {
+    font-size: 0.54rem;
+  }
+  .annual-tickets li > b {
+    font-size: 1.3rem;
+  }
+  .annual-dialogue-layout .annual-feature-number > strong {
+    font-size: 3.7rem;
+  }
+  .annual-dialogue-layout .annual-feature-number > span {
+    max-width: none;
+  }
+  .annual-length-chart {
+    gap: 10px;
+  }
+  .annual-length-chart > div {
+    grid-template-columns: 40px minmax(0, 1fr) 58px;
+  }
+  .annual-length-chart span,
+  .annual-length-chart b {
+    font-size: 0.65rem;
+  }
+  .annual-length-chart i {
+    height: 12px;
+  }
+  .annual-chapter-expression .annual-feature-number > strong {
+    font-size: 3.7rem;
+  }
+  .annual-file-deck {
+    max-width: 330px;
+    padding: 20px 10px 10px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .annual-file {
+    padding: 15px;
+    min-height: 160px;
+    width: 110px;
+    gap: 15px;
+  }
+  .annual-file strong {
+    font-size: 1.4rem;
+  }
+  .annual-file svg {
+    width: 32px;
+    height: 32px;
+  }
+  .annual-file span {
+    font-size: 0.65rem;
+  }
+  .annual-file-voice {
+    transform: translateY(-10px) rotate(3deg);
+  }
+  .annual-keepsake-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+  }
+  .annual-keepsake-layout .annual-feature-number > strong {
+    font-size: 3.5rem;
+  }
+  .annual-keepsake-layout .annual-pairs {
+    gap: 17px;
+    margin-top: 22px;
+  }
+  .annual-keepsake-layout .annual-pairs b {
+    font-size: 1.5rem;
+  }
+  .annual-keepsake {
+    padding: 18px 15px;
+    gap: 17px;
+    box-shadow: 5px 5px 0 #211b2e;
+  }
+  .annual-keepsake > svg {
+    width: 60px;
+    height: 60px;
+  }
+  .annual-keepsake > span,
+  .annual-keepsake > small {
+    font-size: 0.43rem;
+    letter-spacing: 0.03em;
+  }
+  .annual-keepsake > b {
+    font-size: 1.05rem;
+  }
+  .annual-story-feedback .annual-split {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: 20px;
+  }
+  .annual-story-feedback .annual-feature-number > strong {
+    font-size: 3.4rem;
+  }
+  .annual-receipt {
+    padding: 18px 15px 25px;
+  }
+  .annual-receipt-mark {
+    font-size: 3rem;
+  }
+  .annual-receipt dl > div {
+    font-size: 0.7rem;
+    gap: 6px;
+  }
+  .annual-receipt > p,
+  .annual-receipt > small {
+    font-size: 0.53rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .annual-week-track > i,
+  .annual-landscape i,
+  .annual-length-chart i,
+  .annual-calendar span[data-active="true"] {
+    animation: none;
+  }
+}
