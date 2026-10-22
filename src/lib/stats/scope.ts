@@ -6,7 +6,7 @@ import type {
   ParseWarning,
 } from "../../types/export";
 import { DEFAULT_OPTIONS, type ReportOptions } from "../../types/options";
-import { dayKey, isCalendarDay, toDate } from "./time";
+import { isCalendarDay, toDate } from "./time";
 import { CalendarCache } from "./calendarCache";
 
 export function validateOptions(value: unknown): ReportOptions {
@@ -74,12 +74,7 @@ export function availableYears(
   timezone: string,
   cache = new CalendarCache(timezone),
 ): string[] {
-  const years = new Set<string>();
-  for (const message of parsed.messages) {
-    const date = cache.forMessage(message).calendarAt;
-    if (date) years.add(dayKey(date).slice(0, 4));
-  }
-  return [...years].sort().reverse();
+  return cache.availableYears(parsed.messages);
 }
 const object = (value: unknown): value is JsonObject =>
   !!value && typeof value === "object" && !Array.isArray(value);
@@ -149,13 +144,13 @@ export function scopeExport(
         message.role !== "assistant")
     )
       return false;
-    const { createdAt: date, calendarAt } = cache.forMessage(message);
+    const { createdAt: date, day } = cache.forMessage(message);
     if (bounds) {
       if (!date) {
         undated++;
         return false;
       }
-      const key = dayKey(calendarAt!);
+      const key = day!;
       if (key < bounds[0] || key > bounds[1]) return false;
     }
     if (date && message.conversationId) {

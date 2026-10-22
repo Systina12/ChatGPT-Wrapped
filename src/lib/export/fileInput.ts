@@ -1,4 +1,4 @@
-import JSZip from "jszip";
+import { BlobReader, ZipReader } from "@zip.js/zip.js";
 import type { ExportEntry } from "../../types/export";
 export const MAX_ZIP_BYTES = 512 * 1024 * 1024;
 export const MAX_JSON_BYTES = 128 * 1024 * 1024;
@@ -39,17 +39,18 @@ export const JSON_LIMITS: Readonly<JsonLimits> = Object.freeze({
   fileBytes: MAX_JSON_BYTES,
   totalBytes: MAX_TOTAL_JSON_BYTES,
 });
+export class ImportLimitError extends Error {}
 export function checkJsonSize(
   size: number,
   total: number,
   limits: Readonly<JsonLimits> = JSON_LIMITS,
 ): void {
   if (size > limits.fileBytes)
-    throw new Error(
+    throw new ImportLimitError(
       "A report JSON exceeds 128 MiB / 单个数据 JSON 超过 128 MiB",
     );
   if (total > limits.totalBytes)
-    throw new Error(
+    throw new ImportLimitError(
       "Report JSON total exceeds 512 MiB / 数据 JSON 总量超过 512 MiB",
     );
 }
@@ -90,118 +91,112 @@ async function zipToEntries(
 ): Promise<ExportEntry[]> {
   if (file.size > MAX_ZIP_BYTES)
     throw new Error("ZIP exceeds 512 MiB / ZIP 超过 512 MiB");
-  const archive = await JSZip.loadAsync(await file.arrayBuffer());
-  aborted(options.signal);
-  const files = Object.values(archive.files).filter((entry) => !entry.dir);
-  const relevantCount = files.filter((entry) =>
-    isRelevantJson(entry.name),
-  ).length;
+  // BlobReader slices the central directory and requested compressed entries.
+  // Large binary attachments are not materialized as an archive-sized buffer.
+  const archive = new ZipReader(new BlobReader(file), {
+    useWebWorkers: false,
+    signal: options.signal,
+    checkCrc32: true,
+  });
   const entries: ExportEntry[] = [];
   let total = 0,
-    completed = 0;
-  for (const entry of files) {
+    declaredTotal = 0,
+    completed = 0,
+    relevantCount = 0;
+  for await (const entry of archive.getEntriesGenerator()) {
     aborted(options.signal);
-    let text: string | undefined;
-    let size =
-      (entry as unknown as { _data?: { uncompressedSize?: number } })._data
-        ?.uncompressedSize || 0;
-    if (isRelevantJson(entry.name)) {
-      checkJsonSize(size, total + size);
-      const stream = (
-        entry as unknown as {
-          internalStream(type: "uint8array"): ZipByteStream;
-        }
-      ).internalStream("uint8array");
-      const result = await readBoundedZipStream(stream, total, options.signal);
-      total += result.sizeBytes;
-      size = result.sizeBytes;
-      // Decode only after the bounded stream finishes; irrelevant JSON is never inflated.
-      text = await new Blob(result.chunks as BlobPart[]).text();
-      completed++;
-      options.onProgress?.({
-        phase: "reading",
-        completed,
-        total: relevantCount,
-      });
+    if (entry.directory) continue;
+    const record: ExportEntry = {
+      path: entry.filename,
+      name: basename(entry.filename),
+      size: entry.uncompressedSize,
+    };
+    if (isRelevantJson(entry.filename)) {
+      relevantCount++;
+      declaredTotal += record.size;
+      checkJsonSize(record.size, declaredTotal);
+      record.readText = async () => {
+        aborted(options.signal);
+        const result = await readBoundedZipText(
+          (sink) => entry.getData(sink),
+          total,
+          options.signal,
+          (bytes) => {
+            total += bytes;
+          },
+        );
+        if (result.sizeBytes !== record.size)
+          throw new Error("Invalid ZIP uncompressed size / ZIP 解压大小不一致");
+        options.onProgress?.({
+          phase: "reading",
+          completed: ++completed,
+          total: relevantCount,
+        });
+        return result.text;
+      };
     }
-    entries.push({ path: entry.name, name: basename(entry.name), size, text });
+    entries.push(record);
   }
+  await archive.close();
   return normalize(entries);
 }
-export interface ZipByteStream {
-  on(event: "data", callback: (chunk: Uint8Array) => void): void;
-  on(event: "error", callback: (error: Error) => void): void;
-  on(event: "end", callback: () => void): void;
-  pause(): void;
-  resume(): void;
-}
-export function readBoundedZipStream(
-  stream: ZipByteStream,
+/** Enforce actual inflated bytes in the sink, before retaining or decoding them. */
+export async function readBoundedZipText(
+  consume: (sink: WritableStream<Uint8Array>) => Promise<unknown>,
   previousBytes: number,
   signal?: AbortSignal,
+  charge?: (bytes: number) => void,
   limits: Readonly<JsonLimits> = JSON_LIMITS,
-): Promise<{ chunks: Uint8Array[]; sizeBytes: number }> {
-  return new Promise((resolve, reject) => {
-    let sizeBytes = 0,
-      settled = false;
-    const chunks: Uint8Array[] = [];
-    const cleanup = () => signal?.removeEventListener("abort", abort);
-    const fail = (error: unknown) => {
-      if (settled) return;
-      settled = true;
-      stream.pause();
-      cleanup();
-      chunks.length = 0;
-      reject(error);
-    };
-    const abort = () =>
-      fail(new DOMException("Import cancelled / 导入已取消", "AbortError"));
-    signal?.addEventListener("abort", abort, { once: true });
-    if (signal?.aborted) {
-      abort();
-      return;
-    }
-    stream.on("data", (chunk) => {
-      if (settled) return;
-      try {
+): Promise<{ text: string; sizeBytes: number }> {
+  aborted(signal);
+  let sizeBytes = 0;
+  const decoder = new TextDecoder();
+  const parts: string[] = [];
+  await consume(
+    new WritableStream<Uint8Array>({
+      write(chunk) {
         aborted(signal);
         sizeBytes += chunk.byteLength;
+        charge?.(chunk.byteLength);
         checkJsonSize(sizeBytes, previousBytes + sizeBytes, limits);
-        chunks.push(chunk);
-      } catch (error) {
-        fail(error);
-      }
-    });
-    stream.on("error", fail);
-    stream.on("end", () => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve({ chunks, sizeBytes });
-    });
-    stream.resume();
-  });
+        parts.push(decoder.decode(chunk, { stream: true }));
+      },
+    }),
+  );
+  aborted(signal);
+  parts.push(decoder.decode());
+  return { text: parts.join(""), sizeBytes };
 }
 export async function readJsonEntry(entry: ExportEntry): Promise<unknown> {
   if (!isRelevantJson(entry.name)) return undefined;
   checkJsonSize(entry.size, entry.size);
-  const text = entry.text ?? (entry.file ? await entry.file.text() : undefined);
+  let text: string | undefined;
+  try {
+    text =
+      entry.text ??
+      (entry.readText
+        ? await entry.readText()
+        : entry.file
+          ? await entry.file.text()
+          : undefined);
+  } finally {
+    // Release the reader/ZIP metadata as soon as this shard has been consumed.
+    entry.readText = undefined;
+  }
   if (text === undefined) return undefined;
-  checkJsonSize(new Blob([text]).size, 0);
+  // ZIP bytes were checked by the sink; File sizes are immutable. Re-encoding
+  // either just to measure it would allocate another entire shard.
+  if (entry.text !== undefined) checkJsonSize(new Blob([text]).size, 0);
   return JSON.parse(text);
 }
 function normalize(entries: ExportEntry[]): ExportEntry[] {
-  const paths = entries.map((e) => e.path.replace(/^\/+|\/+$/g, "").split("/"));
-  const prefix: string[] = [];
-  for (let i = 0; i < (paths[0]?.length || 0) - 1; i++) {
-    if (paths.every((parts) => parts[i] === paths[0][i]))
-      prefix.push(paths[0][i]);
-    else break;
-  }
-  const length = prefix.length;
-  return entries.map((entry, i) => ({
-    ...entry,
-    path: paths[i].slice(length).join("/"),
-    name: basename(entry.path),
-  }));
+  for (const entry of entries)
+    entry.path = entry.path.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  let prefix =
+    entries[0]?.path.slice(0, entries[0].path.lastIndexOf("/") + 1) || "";
+  for (const entry of entries)
+    while (prefix && !entry.path.startsWith(prefix))
+      prefix = prefix.slice(0, prefix.slice(0, -1).lastIndexOf("/") + 1);
+  for (const entry of entries) entry.path = entry.path.slice(prefix.length);
+  return entries;
 }

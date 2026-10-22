@@ -20,6 +20,7 @@ command = ["git", "archive", "--format=zip", commit, "."] + [f":(exclude){path}"
 content = subprocess.check_output(command, cwd=root)
 required = {"src/lib/report/engine.ts", "src/lib/report/restore.ts", "src/lib/report/storage.ts", "src/lib/report/i18n.tsx", "src/lib/report/share.ts", "src/lib/stats/scope.ts", "src/types/options.ts", "src/components/report/ReportControls.tsx", "src/components/report/ShareCard.tsx", "src/styles/features.css", "tests/data.test.ts", "tests/features.test.ts", "tests/import.spec.ts", "tests/features.spec.ts", "playwright.config.ts", ".github/workflows/checks.yml", "package-lock.json"}
 if args.require_annual:
+    required.update({"src/lib/stats/topK.ts", "tests/performance.test.ts", "scripts/generate-large-export.mjs", "docs/performance-2026-10-22.md"})
     required.update({"src/components/report/ActivityCalendar.tsx", "src/components/report/PagedList.tsx", "src/lib/stats/calendarCache.ts", "tests/second-review.test.ts", "tests/second-review.spec.ts", "tsconfig.checks.json", "docs/review-fixes-2026-10-22.md"})
     required.update({"src/components/report/AnnualReport.tsx", "src/components/ui/CuriosityMark.tsx", "src/styles/annual.css", "tests/annual.spec.ts"})
     required.update({"src/components/report/AnnualChapterDetails.tsx", "src/components/report/annualChapters.ts", "src/styles/annual-chapters.css", "docs/annual-report-14-pages.md"})

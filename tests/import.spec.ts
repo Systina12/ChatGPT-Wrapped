@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import JSZip from "jszip";
 import {
   importZip,
   importReport,
@@ -57,6 +58,38 @@ test("partial shards retain visible warnings", async ({ page }) => {
   await ready(page);
   await expect(page.locator(".warning-panel")).toContainText("invalid_json");
   expect(report.meta.schema_version).toBe(2);
+});
+test("mixed-compression ZIP keeps usable data when a shard fails CRC", async ({
+  page,
+}) => {
+  const { conversation } = await import("./fixtures");
+  const zip = new JSZip();
+  zip.file("conversations.json", JSON.stringify([conversation()]), {
+    compression: "STORE",
+  });
+  zip.file("conversations-1.json", "[]", { compression: "DEFLATE" });
+  zip.file("large-irrelevant.bin", Buffer.alloc(256 * 1024), {
+    compression: "STORE",
+  });
+  const bytes = await zip.generateAsync({ type: "nodebuffer" });
+  for (let i = 0; i < bytes.length - 46; i++) {
+    if (
+      bytes.readUInt32LE(i) === 0x02014b50 &&
+      bytes.subarray(i + 46, i + 46 + bytes.readUInt16LE(i + 28)).toString() ===
+        "conversations-1.json"
+    )
+      bytes.writeUInt32LE(123, i + 16);
+  }
+  await page
+    .getByLabel("ZIP file", { exact: true })
+    .setInputFiles({
+      name: "mixed.zip",
+      mimeType: "application/zip",
+      buffer: bytes,
+    });
+  await ready(page);
+  await expect(page.getByTestId("metric-messages")).toHaveText("2");
+  await expect(page.locator(".warning-panel")).toContainText("invalid_json");
 });
 test("imports and validates a report, disabling recalculation", async ({
   page,

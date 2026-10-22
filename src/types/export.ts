@@ -6,6 +6,8 @@ export interface ExportEntry {
   size: number;
   text?: string;
   file?: File;
+  /** One-shot lazy read: production ZIP imports retain at most one decoded shard. */
+  readText?: () => Promise<string>;
 }
 
 export interface SourceFile {
@@ -28,6 +30,7 @@ export interface ParsedConversation {
   isArchived: boolean | null;
   isStarred: boolean | null;
   isShared: boolean;
+  /** Compact parent mapping; original message payloads are released after parsing. */
   raw: unknown;
 }
 

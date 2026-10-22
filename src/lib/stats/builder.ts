@@ -31,17 +31,8 @@ import type {
   WrappedData,
   WrappedMeta,
 } from "../../types/wrapped";
-import {
-  codeBlockCount,
-  excerpt,
-  textTerms,
-  topTerms,
-  languageBucket,
-  languageCounts,
-  punctuationCounts,
-  urlCount,
-  visibleCharCount,
-} from "./text";
+import { excerpt, textTerms, topTerms, messageTextStats } from "./text";
+import { topK } from "./topK";
 import {
   calendarDate,
   dayOrdinal,
@@ -61,10 +52,13 @@ import { CalendarCache } from "./calendarCache";
 
 const TOP_N = 20;
 
-interface MessageWithStats extends ParsedMessage {
+interface MessageWithStats {
+  message: ParsedMessage;
+  day: string | null;
   characterCount: number;
   createdAt: Date | null;
   calendarAt: Date | null;
+  textStats: ReturnType<typeof messageTextStats>;
 }
 
 interface AssetWithStats extends ParsedAsset {
@@ -78,6 +72,7 @@ interface BuildContext {
   messages: MessageWithStats[];
   assets: AssetWithStats[];
   aggregates?: ConversationAggregate[];
+  messageTimes?: Map<string, Date | null>;
 }
 
 interface ConversationAggregate {
@@ -108,11 +103,15 @@ function buildContext(
     parsed,
     timezone,
     conversations: parsed.conversations,
-    messages: parsed.messages.map((message) => ({
-      ...message,
-      characterCount: visibleCharCount(message.text),
-      ...cache.forMessage(message),
-    })),
+    messages: parsed.messages.map((message) => {
+      const textStats = messageTextStats(message);
+      return {
+        message,
+        characterCount: textStats.characterCount,
+        textStats,
+        ...cache.forMessage(message),
+      };
+    }),
     assets: mergeAssets(parsed.assets).map((asset) => ({
       ...asset,
       category: classifyAsset(asset),
@@ -125,7 +124,24 @@ export function buildOverviewData(
   timezone: string,
   cache: CalendarCache,
 ): OverviewStats {
-  return overview(buildContext(parsed, timezone, cache));
+  function* messages() {
+    for (const message of parsed.messages)
+      yield {
+        message,
+        characterCount: messageTextStats(message).characterCount,
+        createdAt: cache.forMessage(message).createdAt,
+      };
+  }
+  const assets = mergeAssets(parsed.assets).map((asset) => ({
+    ...asset,
+    category: classifyAsset(asset),
+  }));
+  return overviewFor(
+    parsed.conversations.length,
+    messages(),
+    dedupedAssetCounts(assets),
+    timezone,
+  );
 }
 
 export function buildWrappedData(
@@ -154,12 +170,15 @@ export function buildWrappedData(
     onProgress?.(8 + fraction),
   );
   onProgress?.(9);
-  const quality = qualityStats(context);
+  const quality = qualityStats(context, conversations);
   const highlightStats = highlights(
     context,
     timelineStats,
     activityStats,
     modelStatsValue,
+    conversations,
+    messages,
+    quality,
   );
   onProgress?.(10);
   return {
@@ -202,45 +221,60 @@ function meta(context: BuildContext): WrappedMeta {
 }
 
 function overview(context: BuildContext): OverviewStats {
-  const userMessages = context.messages.filter(
-    (message) => message.role === "user",
+  return overviewFor(
+    context.conversations.length,
+    context.messages,
+    dedupedAssetCounts(context.assets),
+    context.timezone,
   );
-  const assistantMessages = context.messages.filter(
-    (message) => message.role === "assistant",
-  );
-  const userCharacterCount = sum(
-    userMessages.map((message) => message.characterCount),
-  );
-  const assistantCharacterCount = sum(
-    assistantMessages.map((message) => message.characterCount),
-  );
-  let first: Date | null = null;
-  let last: Date | null = null;
-  for (const message of context.messages) {
-    if (!message.createdAt) continue;
-    first = minDate(first, message.createdAt);
-    last = maxDate(last, message.createdAt);
-  }
-  const assetCounts = dedupedAssetCounts(context.assets);
+}
 
+function overviewFor(
+  conversationCount: number,
+  messages: Iterable<
+    Pick<MessageWithStats, "message" | "characterCount" | "createdAt">
+  >,
+  assetCounts: Record<AssetCategory, number>,
+  timezone: string,
+): OverviewStats {
+  let users = 0,
+    assistants = 0,
+    userCharacters = 0,
+    assistantCharacters = 0,
+    characters = 0;
+  let first: Date | null = null,
+    last: Date | null = null;
+  for (const item of messages) {
+    characters += item.characterCount;
+    if (item.message.role === "user") {
+      users++;
+      userCharacters += item.characterCount;
+    }
+    if (item.message.role === "assistant") {
+      assistants++;
+      assistantCharacters += item.characterCount;
+    }
+    if (item.createdAt) {
+      first = minDate(first, item.createdAt);
+      last = maxDate(last, item.createdAt);
+    }
+  }
   return {
-    conversation_count: context.conversations.length,
-    user_message_count: userMessages.length,
-    assistant_message_count: assistantMessages.length,
+    conversation_count: conversationCount,
+    user_message_count: users,
+    assistant_message_count: assistants,
     image_count: assetCounts.image,
     file_count: assetCounts.file,
     voice_count: assetCounts.voice,
-    user_character_count: userCharacterCount,
-    assistant_character_count: assistantCharacterCount,
-    total_character_count: sum(
-      context.messages.map((message) => message.characterCount),
-    ),
+    user_character_count: userCharacters,
+    assistant_character_count: assistantCharacters,
+    total_character_count: characters,
     first_seen_at: isoOrNull(first),
     last_seen_at: isoOrNull(last),
     known_days:
       first && last
-        ? dayOrdinal(dayKey(calendarDate(last, context.timezone))) -
-          dayOrdinal(dayKey(calendarDate(first, context.timezone))) +
+        ? dayOrdinal(dayKey(calendarDate(last, timezone))) -
+          dayOrdinal(dayKey(calendarDate(first, timezone))) +
           1
         : null,
   };
@@ -272,29 +306,26 @@ function timeline(context: BuildContext): TimelineStats {
     if (!message.createdAt) {
       return;
     }
-    const role = message.role || "unknown";
-    addBucketMetric(buckets, message.calendarAt!, "message_count", 1);
-    addBucketMetric(buckets, message.calendarAt!, `${role}_message_count`, 1);
-    addBucketMetric(
-      buckets,
-      message.calendarAt!,
-      "character_count",
-      message.characterCount,
-    );
-    addBucketMetric(
-      buckets,
-      message.calendarAt!,
-      `${role}_character_count`,
-      message.characterCount,
-    );
+    const role = message.message.role || "unknown";
+    // Resolve each bucket once for all four message metrics.
+    const day = message.day!;
+    for (const [map, key] of [
+      [buckets.years, day.slice(0, 4)],
+      [buckets.months, day.slice(0, 7)],
+      [buckets.days, day],
+    ] as const) {
+      let bucket = map.get(key);
+      if (!bucket) map.set(key, (bucket = metricBucket()));
+      bucket.message_count++;
+      bucket.character_count += message.characterCount;
+      bucket[`${role}_message_count`] =
+        (bucket[`${role}_message_count`] || 0) + 1;
+      bucket[`${role}_character_count`] =
+        (bucket[`${role}_character_count`] || 0) + message.characterCount;
+    }
   });
 
-  const messageTimes = new Map(
-    context.messages.map((message) => [
-      `${message.conversationId}\0${message.messageId}`,
-      message.calendarAt,
-    ]),
-  );
+  const messageTimes = selectedMessageTimes(context);
   context.assets.forEach((asset) => {
     if (asset.source === "library_file") {
       return;
@@ -368,6 +399,7 @@ function activity(messages: MessageWithStats[]): ActivityStats {
 
 function conversationStats(context: BuildContext): ConversationStats {
   const ordinary = selectedAggregates(context);
+  const ranking = topConversations(ordinary, "messageCount", ordinary.length);
   return {
     message_count_distribution: distribution(
       ordinary.map((item) => item.messageCount),
@@ -382,28 +414,30 @@ function conversationStats(context: BuildContext): ConversationStats {
     archived_count: ordinary.filter((item) => item.isArchived).length,
     starred_count: ordinary.filter((item) => item.isStarred).length,
     shared_count: ordinary.filter((item) => item.isShared).length,
-    longest_by_messages: topConversations(ordinary, "messageCount"),
+    longest_by_messages: ranking.slice(0, TOP_N),
     longest_by_characters: topConversations(ordinary, "characterCount"),
     most_assets: topConversations(ordinary, "assetCount"),
-    ranking: topConversations(ordinary, "messageCount", ordinary.length),
+    ranking,
     earliest: firstConversation(ordinary),
     latest: lastConversation(ordinary),
   };
 }
 
 function messageStats(messages: MessageWithStats[]): MessageStats {
-  const user = messages.filter((message) => message.role === "user");
-  const assistant = messages.filter((message) => message.role === "assistant");
+  const user = messages.filter((message) => message.message.role === "user");
+  const assistant = messages.filter(
+    (message) => message.message.role === "assistant",
+  );
   const punctuation = { question_marks: 0, exclamation_marks: 0 };
   let urls = 0;
   let codeBlocks = 0;
 
   messages.forEach((message) => {
-    const counts = punctuationCounts(message.text);
+    const counts = message.textStats;
     punctuation.question_marks += counts.question_marks;
     punctuation.exclamation_marks += counts.exclamation_marks;
-    urls += urlCount(message.text);
-    codeBlocks += codeBlockCount(message.text);
+    urls += counts.urls;
+    codeBlocks += counts.codeBlocks;
   });
 
   return {
@@ -442,9 +476,9 @@ function modelStats(messages: MessageWithStats[]): ModelStats {
   const monthly = new Map<string, Map<string, number>>();
 
   messages
-    .filter((message) => message.role === "assistant")
+    .filter((message) => message.message.role === "assistant")
     .forEach((message) => {
-      const model = message.modelSlug || "unknown";
+      const model = message.message.modelSlug || "unknown";
       const stats = byModel.get(model) || {
         messageCount: 0,
         characterCount: 0,
@@ -456,7 +490,7 @@ function modelStats(messages: MessageWithStats[]): ModelStats {
       if (message.createdAt) {
         stats.firstSeenAt = minDate(stats.firstSeenAt, message.createdAt);
         stats.lastSeenAt = maxDate(stats.lastSeenAt, message.createdAt);
-        const month = monthKey(message.calendarAt!);
+        const month = message.day!.slice(0, 7);
         const monthCounter = monthly.get(month) || new Map<string, number>();
         monthCounter.set(model, (monthCounter.get(model) || 0) + 1);
         monthly.set(month, monthCounter);
@@ -493,12 +527,7 @@ function modelStats(messages: MessageWithStats[]): ModelStats {
 }
 
 function assetStats(context: BuildContext): AssetStats {
-  const messageTimes = new Map(
-    context.messages.map((message) => [
-      `${message.conversationId}\0${message.messageId}`,
-      message.calendarAt,
-    ]),
-  );
+  const messageTimes = selectedMessageTimes(context);
   const usableAssets = context.assets.filter(
     (asset) => asset.source !== "library_file",
   );
@@ -553,11 +582,11 @@ function languageStats(messages: MessageWithStats[]): LanguageStats {
   };
   const buckets = new Map<string, number>();
   messages.forEach((message) => {
-    const counts = languageCounts(message.text);
+    const counts = message.textStats;
     totals.chinese_characters += counts.chinese_characters;
     totals.english_words += counts.english_words;
     totals.digit_characters += counts.digit_characters;
-    incrementMap(buckets, languageBucket(message.text));
+    incrementMap(buckets, counts.bucket);
   });
   return {
     totals,
@@ -577,16 +606,16 @@ function frequentWords(
     counter.set(term, (counter.get(term) || 0) + 1);
   const interval = Math.max(1000, Math.ceil(messages.length / 50));
   messages.forEach((message, index) => {
-    const month = message.calendarAt ? monthKey(message.calendarAt) : null;
+    const month = message.day?.slice(0, 7) ?? null;
     let monthCounter = month ? monthly.get(month) : undefined;
     if (month && !monthCounter) {
       monthCounter = new Map();
       monthly.set(month, monthCounter);
     }
-    for (const term of textTerms(message.text || "")) {
+    for (const term of textTerms(message.message.text || "")) {
       add(all, term);
-      if (message.role === "user") add(user, term);
-      if (message.role === "assistant") add(assistant, term);
+      if (message.message.role === "user") add(user, term);
+      if (message.message.role === "assistant") add(assistant, term);
       if (monthCounter) add(monthCounter, term);
     }
     if ((index + 1) % interval === 0) progress?.((index + 1) / messages.length);
@@ -603,8 +632,10 @@ function frequentWords(
   };
 }
 
-function qualityStats(context: BuildContext): QualityStats {
-  const ordinary = selectedAggregates(context);
+function qualityStats(
+  context: BuildContext,
+  conversations: ConversationStats,
+): QualityStats {
   return {
     feedback_count: context.parsed.feedback.length,
     feedback_by_rating: Object.fromEntries(
@@ -618,9 +649,9 @@ function qualityStats(context: BuildContext): QualityStats {
         .map((item) => item.conversationId)
         .filter(Boolean),
     ).size,
-    high_interaction_conversations: topConversations(ordinary, "messageCount"),
-    high_asset_conversations: topConversations(ordinary, "assetCount"),
-    high_character_conversations: topConversations(ordinary, "characterCount"),
+    high_interaction_conversations: conversations.longest_by_messages,
+    high_asset_conversations: conversations.most_assets,
+    high_character_conversations: conversations.longest_by_characters,
   };
 }
 
@@ -629,30 +660,24 @@ function highlights(
   timelineStats: TimelineStats,
   activityStats: ActivityStats,
   modelStatsValue: ModelStats,
+  conversations: ConversationStats,
+  messages: MessageStats,
+  quality: QualityStats,
 ): HighlightStats {
   const ordinary = selectedAggregates(context);
   return {
     most_active_day: timelineStats.most_active_day,
     most_active_month: timelineStats.most_active_month,
     longest_conversation_by_messages:
-      topConversations(ordinary, "messageCount", 1)[0] || null,
+      conversations.longest_by_messages[0] || null,
     longest_conversation_by_characters:
-      topConversations(ordinary, "characterCount", 1)[0] || null,
-    most_asset_conversation:
-      topConversations(ordinary, "assetCount", 1)[0] || null,
+      conversations.longest_by_characters[0] || null,
+    most_asset_conversation: quality.high_asset_conversations[0] || null,
     most_used_model: modelStatsValue.most_used_model,
     most_active_hour: activityStats.most_active_hour,
     most_active_weekday: activityStats.most_active_weekday,
-    longest_user_message:
-      topMessages(
-        context.messages.filter((message) => message.role === "user"),
-        1,
-      )[0] || null,
-    longest_assistant_message:
-      topMessages(
-        context.messages.filter((message) => message.role === "assistant"),
-        1,
-      )[0] || null,
+    longest_user_message: messages.longest_user_messages[0] || null,
+    longest_assistant_message: messages.longest_assistant_messages[0] || null,
     first_conversation: firstConversation(ordinary),
     latest_conversation: lastConversation(ordinary),
   };
@@ -695,20 +720,20 @@ function conversationAggregates(
   });
 
   context.messages.forEach((message) => {
-    if (!message.conversationId) {
+    if (!message.message.conversationId) {
       return;
     }
-    const rowId = byConversationId.get(message.conversationId)?.[0];
+    const rowId = byConversationId.get(message.message.conversationId)?.[0];
     const aggregate = rowId ? aggregates.get(rowId) : undefined;
     if (!aggregate) {
       return;
     }
     aggregate.messageCount += 1;
     aggregate.characterCount += message.characterCount;
-    if (message.role === "user") {
+    if (message.message.role === "user") {
       aggregate.userMessageCount += 1;
       aggregate.userCharacterCount += message.characterCount;
-    } else if (message.role === "assistant") {
+    } else if (message.message.role === "assistant") {
       aggregate.assistantMessageCount += 1;
       aggregate.assistantCharacterCount += message.characterCount;
     }
@@ -730,6 +755,31 @@ function conversationAggregates(
 
 function selectedAggregates(context: BuildContext): ConversationAggregate[] {
   return (context.aggregates ??= conversationAggregates(context));
+}
+
+function selectedMessageTimes(context: BuildContext) {
+  if (!context.messageTimes) {
+    context.messageTimes = new Map();
+    // Resolve only messages actually referenced by attachments. A text-heavy
+    // export must not allocate a second string-keyed index for every message.
+    const wanted = new Map<string | null, Set<string>>();
+    for (const asset of context.assets) {
+      if (asset.source === "library_file" || !asset.messageId) continue;
+      let ids = wanted.get(asset.conversationId);
+      if (!ids) wanted.set(asset.conversationId, (ids = new Set()));
+      ids.add(asset.messageId);
+    }
+    if (wanted.size)
+      for (const item of context.messages) {
+        const message = item.message;
+        if (wanted.get(message.conversationId)?.has(message.messageId))
+          context.messageTimes.set(
+            `${message.conversationId}\0${message.messageId}`,
+            item.calendarAt,
+          );
+      }
+  }
+  return context.messageTimes;
 }
 
 function metricBucket(): MetricBucket {
@@ -806,64 +856,66 @@ function topConversations(
   metric: keyof ConversationAggregate,
   limit = TOP_N,
 ): TopConversation[] {
-  return [...items]
-    .sort(
-      (left, right) => Number(right[metric] || 0) - Number(left[metric] || 0),
-    )
-    .slice(0, limit)
-    .map((item) => ({
-      conversation_id: item.conversationId,
-      title: item.title,
-      created_at: item.createdAtText,
-      message_count: item.messageCount,
-      user_message_count: item.userMessageCount,
-      assistant_message_count: item.assistantMessageCount,
-      character_count: item.characterCount,
-      asset_count: item.assetCount,
-      value: typeof item[metric] === "number" ? item[metric] : null,
-    }));
+  const compare = (left: ConversationAggregate, right: ConversationAggregate) =>
+    Number(right[metric] || 0) - Number(left[metric] || 0);
+  return (
+    limit >= items.length
+      ? [...items].sort(compare)
+      : topK(items, limit, compare)
+  ).map((item) => ({
+    conversation_id: item.conversationId,
+    title: item.title,
+    created_at: item.createdAtText,
+    message_count: item.messageCount,
+    user_message_count: item.userMessageCount,
+    assistant_message_count: item.assistantMessageCount,
+    character_count: item.characterCount,
+    asset_count: item.assetCount,
+    value: typeof item[metric] === "number" ? item[metric] : null,
+  }));
 }
 
 function topMessages(
   messages: MessageWithStats[],
   limit = TOP_N,
 ): TopMessage[] {
-  return [...messages]
-    .sort((left, right) => right.characterCount - left.characterCount)
-    .slice(0, limit)
-    .map((message) => ({
-      message_id: message.messageId,
-      conversation_id: message.conversationId,
-      role: message.role,
-      created_at: isoOrNull(message.createdAt),
-      character_count: message.characterCount,
-      text_excerpt: excerpt(message.text, 360),
-    }));
+  return topK(
+    messages,
+    limit,
+    (left, right) => right.characterCount - left.characterCount,
+  ).map((message) => ({
+    message_id: message.message.messageId,
+    conversation_id: message.message.conversationId,
+    role: message.message.role,
+    created_at: isoOrNull(message.createdAt),
+    character_count: message.characterCount,
+    text_excerpt: excerpt(message.message.text, 360),
+  }));
 }
 
 function largestAssets(
   assets: AssetWithStats[],
   limit = TOP_N,
 ): LargestAsset[] {
-  return assets
-    .filter(
+  return topK(
+    assets.filter(
       (asset) =>
         asset.sizeBytes !== null &&
         Number.isSafeInteger(asset.sizeBytes) &&
         asset.sizeBytes >= 0,
-    )
-    .sort((left, right) => (right.sizeBytes || 0) - (left.sizeBytes || 0))
-    .slice(0, limit)
-    .map((asset) => ({
-      local_path: asset.localPath,
-      display_name: asset.displayName,
-      category: asset.category,
-      mime_type: asset.mimeType,
-      file_extension: asset.fileExtension,
-      size_bytes: asset.sizeBytes,
-      conversation_id: asset.conversationId,
-      message_id: asset.messageId,
-    }));
+    ),
+    limit,
+    (left, right) => (right.sizeBytes || 0) - (left.sizeBytes || 0),
+  ).map((asset) => ({
+    local_path: asset.localPath,
+    display_name: asset.displayName,
+    category: asset.category,
+    mime_type: asset.mimeType,
+    file_extension: asset.fileExtension,
+    size_bytes: asset.sizeBytes,
+    conversation_id: asset.conversationId,
+    message_id: asset.messageId,
+  }));
 }
 
 function firstConversation(

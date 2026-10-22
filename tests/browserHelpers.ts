@@ -16,7 +16,10 @@ export async function importZip(
   await page.getByLabel("ZIP file", { exact: true }).setInputFiles({
     name: "synthetic.zip",
     mimeType: "application/zip",
-    buffer: await zip.generateAsync({ type: "nodebuffer" }),
+    buffer: await zip.generateAsync({
+      type: "nodebuffer",
+      compression: "DEFLATE",
+    }),
   });
 }
 export async function ready(page: Page) {

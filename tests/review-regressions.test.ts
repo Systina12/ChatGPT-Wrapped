@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseExportEntries } from "../src/lib/export/parser";
 import { classifyAsset, mergeAssets } from "../src/lib/export/assets";
-import {
-  readBoundedZipStream,
-  type ZipByteStream,
-} from "../src/lib/export/fileInput";
+import { readBoundedZipText } from "../src/lib/export/fileInput";
 import { buildReport } from "../src/lib/report/engine";
 import { restoreReport, restoreReportText } from "../src/lib/report/restore";
 import { shareSvg, shareText } from "../src/lib/report/share";
@@ -396,81 +393,73 @@ describe("share card bounds and period", () => {
   });
 });
 
-/** Same byte-reader interface as JSZip; the data chunks bypass ZIP metadata entirely. */
-function streamOf(
-  chunks: Uint8Array[],
-): ZipByteStream & { paused: () => boolean } {
-  let paused = false;
-  const callbacks: Record<string, (value?: unknown) => void> = {};
+/** Producer stops at the first rejected sink write, without trusting ZIP metadata. */
+function streamOf(chunks: Uint8Array[]) {
+  let writes = 0;
   return {
-    on(
-      event: string,
-      callback:
-        | ((value: Uint8Array) => void)
-        | ((error: Error) => void)
-        | (() => void),
-    ) {
-      callbacks[event] = callback as (value?: unknown) => void;
-    },
-    pause() {
-      paused = true;
-    },
-    paused: () => paused,
-    resume() {
-      queueMicrotask(() => {
-        for (const chunk of chunks) {
-          if (paused) return;
-          callbacks.data(chunk);
-        }
-        if (!paused) callbacks.end();
-      });
+    writes: () => writes,
+    async consume(sink: WritableStream<Uint8Array>) {
+      const writer = sink.getWriter();
+      for (const chunk of chunks) {
+        writes++;
+        await writer.write(chunk);
+      }
+      await writer.close();
     },
   };
 }
 describe("actual decompressed output caps", () => {
-  it("pauses as soon as real chunk bytes exceed the per-file cap", async () => {
-    const stream = streamOf([new Uint8Array(9), new Uint8Array(8)]);
+  it("stops as soon as real chunk bytes exceed the per-file cap", async () => {
+    const stream = streamOf([new Uint8Array(9), new Uint8Array(8), new Uint8Array(8)]);
     await expect(
-      readBoundedZipStream(stream, 0, undefined, {
+      readBoundedZipText(stream.consume, 0, undefined, undefined, {
         fileBytes: 16,
         totalBytes: 100,
       }),
     ).rejects.toThrow(/128/);
-    expect(stream.paused()).toBe(true);
+    expect(stream.writes()).toBe(2);
   });
   it("enforces cumulative real bytes across entries even within the per-file cap", async () => {
-    const first = await readBoundedZipStream(
-      streamOf([new Uint8Array(12)]),
+    const first = await readBoundedZipText(
+      streamOf([new Uint8Array(12)]).consume,
       0,
+      undefined,
       undefined,
       { fileBytes: 16, totalBytes: 24 },
     );
-    const stream = streamOf([new Uint8Array(8), new Uint8Array(5)]);
+    const stream = streamOf([new Uint8Array(8), new Uint8Array(5), new Uint8Array(8)]);
     await expect(
-      readBoundedZipStream(stream, first.sizeBytes, undefined, {
-        fileBytes: 16,
-        totalBytes: 24,
-      }),
+      readBoundedZipText(
+        stream.consume,
+        first.sizeBytes,
+        undefined,
+        undefined,
+        {
+          fileBytes: 16,
+          totalBytes: 24,
+        },
+      ),
     ).rejects.toThrow(/512/);
-    expect(stream.paused()).toBe(true);
+    expect(stream.writes()).toBe(2);
   });
   it("accepts actual output exactly at both limits", async () => {
-    const result = await readBoundedZipStream(
-      streamOf([new Uint8Array(8), new Uint8Array(8)]),
+    const result = await readBoundedZipText(
+      streamOf([new Uint8Array(8), new Uint8Array(8)]).consume,
       8,
+      undefined,
       undefined,
       { fileBytes: 16, totalBytes: 24 },
     );
     expect(result.sizeBytes).toBe(16);
-    expect(result.chunks).toHaveLength(2);
+    expect(result.text).toHaveLength(16);
   });
-  it("pauses an already cancelled byte reader", async () => {
+  it("never starts an already cancelled byte reader", async () => {
     const controller = new AbortController();
     controller.abort();
     const stream = streamOf([new Uint8Array(1)]);
     await expect(
-      readBoundedZipStream(stream, 0, controller.signal),
+      readBoundedZipText(stream.consume, 0, controller.signal),
     ).rejects.toMatchObject({ name: "AbortError" });
-    expect(stream.paused()).toBe(true);
+    expect(stream.writes()).toBe(0);
   });
 });

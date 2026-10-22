@@ -13,7 +13,7 @@
     "build:pages": "tsc -b && vite build --base=/ChatGPT-Wrapped/"
   },
   "dependencies": {
-    "jszip": "^3.10.1",
+    "@zip.js/zip.js": "^2.24.0",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -26,6 +26,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^6.0.3",
     "axe-core": "^4.14.0",
+    "jszip": "^3.10.2",
     "typescript": "^5.6.3",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"

@@ -1,3 +1,5 @@
+import type { ParsedMessage } from "../../types/export";
+import { topK } from "./topK";
 const URL_RE = /https?:\/\/[^\s<>)"']+/g;
 const EN_WORD_RE = /[A-Za-z][A-Za-z0-9_'-]*/g;
 const CJK_RE = /[\u3400-\u4dbf\u4e00-\u9fff]+/g;
@@ -94,48 +96,47 @@ export function excerpt(
 }
 
 export function urlCount(text: string | null | undefined): number {
-  return text ? [...text.matchAll(URL_RE)].length : 0;
+  return text ? countMatches(text, URL_RE) : 0;
 }
 
 export function codeBlockCount(text: string | null | undefined): number {
   if (!text) {
     return 0;
   }
-  const fenced = Math.floor((text.match(/```/g) || []).length / 2);
-  const inlineLike = (text.match(/`[^`\n]{3,}`/g) || []).length;
+  const fenced = Math.floor(countMatches(text, /```/g) / 2);
+  const inlineLike = countMatches(text, /`[^`\n]{3,}`/g);
   return fenced + inlineLike;
 }
 
-export function punctuationCounts(
-  text: string | null | undefined,
-): Record<string, number> {
+export function punctuationCounts(text: string | null | undefined) {
   if (!text) {
     return { question_marks: 0, exclamation_marks: 0 };
   }
-  return {
-    question_marks: countChars(text, "?") + countChars(text, "？"),
-    exclamation_marks: countChars(text, "!") + countChars(text, "！"),
-  };
+  let question_marks = 0,
+    exclamation_marks = 0;
+  for (let i = 0; i < text.length; i++) {
+    const char = text.charCodeAt(i);
+    if (char === 63 || char === 0xff1f) question_marks++;
+    if (char === 33 || char === 0xff01) exclamation_marks++;
+  }
+  return { question_marks, exclamation_marks };
 }
 
-export function languageCounts(
-  text: string | null | undefined,
-): Record<string, number> {
+export function languageCounts(text: string | null | undefined) {
   if (!text) {
     return { chinese_characters: 0, english_words: 0, digit_characters: 0 };
   }
   return {
-    chinese_characters: [...text.matchAll(CJK_RE)].reduce(
-      (total, match) => total + match[0].length,
-      0,
-    ),
-    english_words: [...text.matchAll(EN_WORD_RE)].length,
-    digit_characters: [...text.matchAll(DIGIT_RE)].length,
+    chinese_characters: countMatches(text, CJK_RE, true),
+    english_words: countMatches(text, EN_WORD_RE),
+    digit_characters: countMatches(text, DIGIT_RE),
   };
 }
 
 export function languageBucket(text: string | null | undefined): string {
-  const counts = languageCounts(text);
+  return bucketForCounts(languageCounts(text));
+}
+function bucketForCounts(counts: Record<string, number>): string {
   const hasCjk = counts.chinese_characters > 0;
   const hasEnglish = counts.english_words > 0;
   if (hasCjk && hasEnglish) return "mixed";
@@ -163,12 +164,11 @@ export function textTerms(text: string): string[] {
 }
 
 export function topTerms(counter: Map<string, number>, limit: number) {
-  return [...counter.entries()]
-    .sort(
-      (left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
-    )
-    .slice(0, limit)
-    .map(([term, count]) => ({ term, count }));
+  return topK(
+    counter.entries(),
+    limit,
+    (left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
+  ).map(([term, count]) => ({ term, count }));
 }
 
 function englishTerms(text: string): string[] {
@@ -231,23 +231,57 @@ const Segmenter = (
 const segmenter = Segmenter
   ? new Segmenter("zh", { granularity: "word" })
   : null;
+// Repeated Chinese phrases are common even when message IDs/numbers differ.
+// Bound both retained text/terms and entry count; never cache arbitrary long runs.
+const chineseCache = new Map<string, { terms: string[]; bytes: number }>();
+const CHINESE_CACHE_BYTES = 4 * 1024 * 1024;
+let chineseCacheBytes = 0;
+function segmentedTerms(sequence: string): string[] {
+  const cached = chineseCache.get(sequence);
+  if (cached) {
+    chineseCache.delete(sequence);
+    chineseCache.set(sequence, cached);
+    return cached.terms;
+  }
+  const terms: string[] = [];
+  for (const part of segmenter!.segment(sequence))
+    if (
+      part.isWordLike &&
+      part.segment.length > 1 &&
+      !ZH_STOP.has(part.segment)
+    )
+      terms.push(part.segment);
+  const bytes =
+    128 +
+    sequence.length * 2 +
+    terms.reduce((n, term) => n + 32 + term.length * 2, 0);
+  if (bytes <= CHINESE_CACHE_BYTES / 16) {
+    while (
+      chineseCache.size &&
+      (chineseCacheBytes + bytes > CHINESE_CACHE_BYTES ||
+        chineseCache.size >= 4096)
+    ) {
+      const key = chineseCache.keys().next().value!;
+      chineseCacheBytes -= chineseCache.get(key)!.bytes;
+      chineseCache.delete(key);
+    }
+    chineseCache.set(sequence, { terms, bytes });
+    chineseCacheBytes += bytes;
+  }
+  return terms;
+}
 export function chineseTerms(text: string, useSegmenter = true): string[] {
   const output: string[] = [];
   let remaining = text;
   for (const term of TECH_TERMS) {
+    if (!remaining.includes(term)) continue;
     const pieces = remaining.split(term);
     for (let i = 1; i < pieces.length; i++) output.push(term);
     remaining = pieces.join(" ");
   }
   for (const match of remaining.matchAll(CJK_RE)) {
     if (segmenter && useSegmenter) {
-      for (const part of segmenter.segment(match[0]))
-        if (
-          part.isWordLike &&
-          part.segment.length > 1 &&
-          !ZH_STOP.has(part.segment)
-        )
-          output.push(part.segment);
+      for (const term of segmentedTerms(match[0])) output.push(term);
     } else {
       const sequence = match[0];
       for (let i = 0; i < sequence.length - 1; i++) {
@@ -259,8 +293,38 @@ export function chineseTerms(text: string, useSegmenter = true): string[] {
   return output;
 }
 
-function countChars(text: string, char: string): number {
-  return text.split(char).length - 1;
+function countMatches(text: string, regex: RegExp, lengths = false): number {
+  regex.lastIndex = 0;
+  let count = 0,
+    match: RegExpExecArray | null;
+  while ((match = regex.exec(text))) count += lengths ? match[0].length : 1;
+  return count;
+}
+
+function analyze(text: string | null) {
+  const language = languageCounts(text);
+  return {
+    text,
+    characterCount: visibleCharCount(text),
+    ...punctuationCounts(text),
+    ...language,
+    bucket: bucketForCounts(language),
+    urls: urlCount(text),
+    codeBlocks: codeBlockCount(text),
+  };
+}
+const messageFeatures = new WeakMap<
+  ParsedMessage,
+  ReturnType<typeof analyze>
+>();
+/** Fixed-size scalar features per message, independent of timezone and scope. */
+export function messageTextStats(message: ParsedMessage) {
+  let cached = messageFeatures.get(message);
+  if (!cached || cached.text !== message.text) {
+    cached = analyze(message.text);
+    messageFeatures.set(message, cached);
+  }
+  return cached;
 }
 
 function increment(

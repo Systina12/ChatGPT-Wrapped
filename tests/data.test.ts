@@ -109,14 +109,17 @@ describe("size limits and selective inflation", () => {
       entries.find((e) => e.name === "unrelated.json")?.text,
     ).toBeUndefined();
     expect(entries.find((e) => e.name === "photo.png")?.text).toBeUndefined();
-    expect(entries.find((e) => e.name === "conversations.json")?.text).toBe(
-      "[]",
-    );
+    expect(
+      entries.find((e) => e.name === "conversations.json")?.text,
+    ).toBeUndefined();
+    expect(progress).toHaveLength(0);
+    const parsed = await parseExportEntries(entries);
+    expect(parsed.messages).toHaveLength(0);
     expect(progress.length).toBe(1);
   });
   it("rejects inconsistent ZIP uncompressed-size metadata", async () => {
     const zip = new JSZip();
-    zip.file("conversations.json", " ".repeat(1024));
+    zip.file("conversations.json", " ".repeat(1024) + "[]");
     const bytes = await zip.generateAsync({
       type: "uint8array",
       compression: "DEFLATE",
@@ -126,7 +129,9 @@ describe("size limits and selective inflation", () => {
       if (view.getUint32(i, true) === 0x02014b50)
         view.setUint32(i + 24, 1, true);
     await expect(
-      filesToExportEntries([browserFile(new File([bytes], "bad.zip"))]),
+      filesToExportEntries([browserFile(new File([bytes], "bad.zip"))]).then(
+        parseExportEntries,
+      ),
     ).rejects.toThrow();
   });
   it("supports cancellation", async () => {

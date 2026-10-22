@@ -14,9 +14,10 @@ import type {
   ParseWarning,
   SourceFile,
 } from "../../types/export";
-import { mergeAssets, pathExtension } from "./assets";
+import { classifyAsset, mergeAssets, pathExtension } from "./assets";
 import {
   isRelevantJson,
+  ImportLimitError,
   readJsonEntry,
   type ImportProgress,
 } from "./fileInput";
@@ -31,6 +32,7 @@ export async function parseExportEntries(
 
 class ExportParser {
   private readonly entries: ExportEntry[];
+  private readonly sourceFiles: SourceFile[];
   private readonly warnings: ParseWarning[] = [];
   private readonly assetNames = new Map<string, string>();
   private readonly libraryByFileName = new Map<string, JsonObject>();
@@ -39,6 +41,7 @@ class ExportParser {
   private readonly conversationRows = new Map<string, number>();
   private readonly messages = new Map<string, ParsedMessage>();
   private readonly assets: ParsedAsset[] = [];
+  private readonly messageAssets = new Map<string, ParsedAsset[]>();
   private readonly libraryFiles: ParsedLibraryFile[] = [];
   private readonly feedback: ParsedFeedback[] = [];
   private readonly shares: ParsedShare[] = [];
@@ -54,9 +57,12 @@ class ExportParser {
     entries: ExportEntry[],
     private readonly onProgress?: (progress: ImportProgress) => void,
   ) {
-    this.entries = [...entries].sort((left, right) =>
-      left.path.localeCompare(right.path),
-    );
+    this.sourceFiles = entries.map(sourceFileFromEntry);
+    // A large export may contain hundreds of thousands of binary attachments.
+    // Only report JSON participates in parsing, ordering and duplicate detection.
+    this.entries = entries
+      .filter((entry) => isRelevantJson(entry.path))
+      .sort((left, right) => left.path.localeCompare(right.path));
     const optionalNames = new Set<string>();
     let conversations = 0;
     for (const entry of this.entries) {
@@ -85,12 +91,50 @@ class ExportParser {
     await this.parseUser();
     await this.parseUserSettings();
 
+    // The report only needs parent links for branch selection, never the full
+    // original content/metadata object graph. Keep message-free and invalid nodes.
+    for (const conversation of this.conversations) {
+      const raw = isObject(conversation.raw) ? conversation.raw : {};
+      conversation.raw = {
+        mapping: isObject(raw.mapping)
+          ? Object.fromEntries(
+              Object.entries(raw.mapping).map(([id, node]) => [
+                id,
+                isObject(node)
+                  ? {
+                      parent:
+                        typeof node.parent === "string" ? node.parent : null,
+                    }
+                  : null,
+              ]),
+            )
+          : {},
+      };
+    }
+    for (const item of [
+      ...this.groupChats,
+      ...this.feedback,
+      ...this.shares,
+      ...this.users,
+      ...this.settings,
+    ])
+      item.raw = null;
+    for (const item of this.libraryFiles) item.raw = {};
+    const assets = mergeAssets([
+      ...this.assets,
+      ...[...this.messageAssets.values()].flat(),
+    ]);
+    for (const asset of assets) {
+      asset.categoryHint = classifyAsset(asset);
+      asset.raw = null;
+    }
+
     return {
-      sourceFiles: this.entries.map(sourceFileFromEntry),
+      sourceFiles: this.sourceFiles,
       metadata: this.metadata,
       conversations: this.conversations,
       messages: [...this.messages.values()],
-      assets: mergeAssets(this.assets),
+      assets,
       assetNameMap: Object.fromEntries(this.assetNames),
       libraryFiles: this.libraryFiles,
       feedback: this.feedback,
@@ -227,17 +271,20 @@ class ExportParser {
         const row = this.conversationRows.get(id);
         const previous =
           row === undefined ? undefined : this.conversations[row];
-        const merged = previous
+        const result = previous
           ? this.mergeConversation(previous.raw as JsonObject, conversation, id)
-          : conversation;
-        if (!this.insertConversationMessages(merged, fallbackId)) {
+          : { merged: conversation, changes: conversation };
+        if (
+          !this.insertConversationMessages(result.changes, fallbackId) &&
+          !previous
+        ) {
           this.warn(
             "invalid_conversation",
             `${file.name}[${index}] contains only damaged message data`,
           );
           return;
         }
-        this.insertConversation(merged, fallbackId);
+        this.insertConversation(result.merged, fallbackId);
         usable++;
       });
       if (data.length === 0 || usable > 0) validFiles++;
@@ -459,7 +506,7 @@ class ExportParser {
     previous: JsonObject,
     next: JsonObject,
     id: string,
-  ): JsonObject {
+  ): { merged: JsonObject; changes: JsonObject } {
     this.warn(
       "duplicate_conversation",
       `Overlapping conversation merged / 重叠会话已合并: ${id}`,
@@ -473,13 +520,16 @@ class ExportParser {
           writable: true,
           configurable: true,
         });
-    const mapping = { ...(isObject(previous.mapping) ? previous.mapping : {}) };
+    const mapping = isObject(previous.mapping) ? previous.mapping : {};
+    const changed: JsonObject = Object.create(null);
     let conflict = false;
     if (isObject(next.mapping))
       for (const [key, node] of Object.entries(next.mapping)) {
         const old = Object.hasOwn(mapping, key) ? mapping[key] : undefined;
-        if (old !== undefined && JSON.stringify(old) !== JSON.stringify(node))
+        if (old !== undefined) {
+          if (JSON.stringify(old) === JSON.stringify(node)) continue;
           conflict = true;
+        }
         // Keep usable history when a later shard contains a damaged/empty duplicate.
         const hasMessage = (value: unknown) =>
           isObject(value) &&
@@ -488,6 +538,23 @@ class ExportParser {
           typeof value.message.author.role === "string" &&
           isObject(value.message.content);
         if (hasMessage(old) && !hasMessage(node)) continue;
+        if (hasMessage(old)) {
+          const oldNode = old as JsonObject;
+          const oldMessage = oldNode.message as JsonObject;
+          const oldId = asStr(oldMessage.id) || asStr(oldNode.id) || key;
+          const nextNode = node as JsonObject;
+          const nextMessage = nextNode.message as JsonObject;
+          const nextId = asStr(nextMessage.id) || asStr(nextNode.id) || key;
+          const messageKey = `${id}\0${oldId}`;
+          if (
+            nextId !== oldId &&
+            this.messages.get(messageKey)?.nodeId === key
+          ) {
+            this.messages.delete(messageKey);
+            this.messageAssets.delete(messageKey);
+          }
+        }
+        changed[key] = node;
         Object.defineProperty(mapping, key, {
           value: node,
           enumerable: true,
@@ -501,7 +568,7 @@ class ExportParser {
         "conflicting_conversation",
         `Conflicting nodes use the later usable record / 冲突节点采用后一个可用记录: ${id}`,
       );
-    return merged;
+    return { merged, changes: { ...merged, mapping: changed } };
   }
 
   private insertConversationMessages(
@@ -565,9 +632,25 @@ class ExportParser {
         createTimeText: null,
         updateTimeText: null,
         modelSlug: asStr(metadata.model_slug),
-        raw: message,
+        raw: null,
       });
+      const key = `${conversationId}\0${messageId}`;
+      const previousAssets = this.messageAssets.get(key);
+      this.messageAssets.delete(key);
       this.insertMessageAssets(conversationId, messageId, content, metadata);
+      const incomingAssets = this.messageAssets.get(key);
+      if (previousAssets && incomingAssets) {
+        // Enrich paths still present in the later message, but never resurrect
+        // attachments removed by that replacement.
+        const paths = new Set(incomingAssets.map((asset) => asset.localPath));
+        this.messageAssets.set(
+          key,
+          mergeAssets([
+            ...previousAssets.filter((asset) => paths.has(asset.localPath)),
+            ...incomingAssets,
+          ]),
+        );
+      }
     });
     return damagedNodes === 0 || validMessages > 0;
   }
@@ -593,7 +676,7 @@ class ExportParser {
       createTimeText: asStr(message.created_at),
       updateTimeText: asStr(message.updated_at),
       modelSlug: null,
-      raw: message,
+      raw: null,
     });
 
     if (Array.isArray(message.attachments)) {
@@ -772,7 +855,13 @@ class ExportParser {
     if (!asset.localPath) {
       return;
     }
-    this.assets.push(asset);
+    if (asset.source === "library_file") this.assets.push(asset);
+    else {
+      const key = `${asset.conversationId}\0${asset.messageId}`;
+      let assets = this.messageAssets.get(key);
+      if (!assets) this.messageAssets.set(key, (assets = []));
+      assets.push(asset);
+    }
   }
 
   private libraryForAsset(
@@ -822,6 +911,11 @@ class ExportParser {
       });
       return await readJsonEntry(entry);
     } catch (error) {
+      if (
+        error instanceof ImportLimitError ||
+        (error instanceof Error && error.name === "AbortError")
+      )
+        throw error;
       this.warn(
         "invalid_json",
         `${entry.name}: ${error instanceof Error ? error.message : String(error)}`,
