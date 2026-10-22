@@ -140,6 +140,54 @@ test("JSON download warns about sensitive content", async ({ page }) => {
     .click();
   expect(warning).toContain("sensitive");
 });
+test("long-message import, filtering and JSON export preserve complete term counts and bounded previews", async ({
+  page,
+}) => {
+  const { conversation, jsonEntry } = await import("./fixtures");
+  const c = conversation();
+  const text =
+    "alpha 人工智能 编程 ".repeat(2000) +
+    Array.from({ length: 3000 }, (_, i) => `term${i}`).join(" ");
+  c.mapping.root.message.content.parts = [text];
+  await importZip(page, [jsonEntry("conversations.json", [c])]);
+  await ready(page);
+  const downloadReport = async () => {
+    page.once("dialog", (dialog) => dialog.accept());
+    const pending = page.waitForEvent("download");
+    await page
+      .getByRole("button", { name: "Download report JSON", exact: true })
+      .click();
+    return JSON.parse(await readFile((await (await pending).path())!, "utf8"));
+  };
+  let report = await downloadReport();
+  expect(
+    report.frequent_words.all.find(
+      (item: { term: string }) => item.term === "alpha",
+    ).count,
+  ).toBe(2000);
+  expect(
+    report.frequent_words.all.find(
+      (item: { term: string }) => item.term === "人工智能",
+    ).count,
+  ).toBe(2001);
+  expect(report.messages.longest_user_messages[0].text_excerpt).toBe(
+    text.slice(0, 359) + "...",
+  );
+  expect(report.messages.longest_user_messages[0].character_count).toBe(
+    text.replace(/\s+/g, "").length,
+  );
+  await page.getByText("Scope & timezone", { exact: true }).click();
+  await page.getByLabel("Message roles", { exact: true }).selectOption("user");
+  await page.getByRole("button", { name: "Recalculate", exact: true }).click();
+  await ready(page);
+  report = await downloadReport();
+  expect(report.meta.table_counts.messages).toBe(1);
+  expect(
+    report.frequent_words.all.find(
+      (item: { term: string }) => item.term === "人工智能",
+    ).count,
+  ).toBe(2000);
+});
 test("mobile and desktop have no horizontal overflow", async ({ page }) => {
   await page.getByText("Explore complete statistics", { exact: true }).click();
   const dimensions = await page.evaluate(() => ({

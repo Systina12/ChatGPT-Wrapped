@@ -88,11 +88,25 @@ export function excerpt(
   if (!text) {
     return null;
   }
-  const compact = text.replace(/\s+/g, " ").trim();
-  if (compact.length <= limit) {
-    return compact;
+  // Retain only the preview prefix. Normalizing the entire message can create
+  // a multi-megabyte parent string retained by a tiny sliced-string excerpt.
+  const nextNonWhitespace = /\S/g;
+  const parts: string[] = [];
+  for (let i = 0; i < text.length; ) {
+    if (/\s/.test(text[i])) {
+      nextNonWhitespace.lastIndex = i;
+      const next = nextNonWhitespace.exec(text);
+      if (!next) break;
+      if (parts.length) parts.push(" ");
+      i = next.index;
+    } else {
+      parts.push(text[i++]);
+    }
+    if (parts.length > limit)
+      return `${parts.join("").slice(0, Math.max(0, limit - 1))}...`;
   }
-  return `${compact.slice(0, Math.max(0, limit - 1))}...`;
+  const compact = parts.join("");
+  return compact.length <= limit ? compact : "...";
 }
 
 export function urlCount(text: string | null | undefined): number {
@@ -154,13 +168,51 @@ export function frequentTerms(
     if (!text) {
       continue;
     }
-    for (const term of textTerms(text)) increment(counter, term);
+    forEachTermCount(text, (term, count) => increment(counter, term, count));
   }
   return topTerms(counter, limit);
 }
 
-export function textTerms(text: string): string[] {
-  return [...englishTerms(text), ...chineseTerms(text)];
+export function textTerms(text: string): Iterable<string> {
+  const terms = iterateTerms(text);
+  // Small messages keep eager iteration cheap; long messages never retain a
+  // complete token array in addition to the frequency maps.
+  return text.length <= 4096 ? [...terms] : terms;
+}
+function* iterateTerms(text: string): Generator<string> {
+  yield* englishTerms(text);
+  yield* iterateChineseTerms(text);
+}
+
+/** Batch repeated long-message terms while bounding extra vocabulary storage.
+ * High-cardinality messages switch to direct counting after 2,048 unique terms. */
+export function forEachTermCount(
+  text: string,
+  visit: (term: string, count: number) => void,
+): void {
+  if (text.length <= 4096) {
+    for (const term of textTerms(text)) visit(term, 1);
+    return;
+  }
+  const batch = new Map<string, number>();
+  let direct = false;
+  const flush = () => {
+    for (const [term, count] of batch) visit(term, count);
+    batch.clear();
+  };
+  for (const term of textTerms(text)) {
+    if (direct) {
+      visit(term, 1);
+      continue;
+    }
+    const count = batch.get(term);
+    if (count === undefined && batch.size >= 2048) {
+      flush();
+      direct = true;
+      visit(term, 1);
+    } else batch.set(term, (count || 0) + 1);
+  }
+  flush();
 }
 
 export function topTerms(counter: Map<string, number>, limit: number) {
@@ -171,15 +223,13 @@ export function topTerms(counter: Map<string, number>, limit: number) {
   ).map(([term, count]) => ({ term, count }));
 }
 
-function englishTerms(text: string): string[] {
-  const terms: string[] = [];
+function* englishTerms(text: string): Generator<string> {
   for (const match of text.matchAll(EN_WORD_RE)) {
     const term = match[0].toLowerCase().replace(/^['_-]+|['_-]+$/g, "");
     if (term.length >= 2 && !EN_STOPWORDS.has(term)) {
-      terms.push(term);
+      yield term;
     }
   }
-  return terms;
 }
 
 const TECH_TERMS = [
@@ -233,29 +283,47 @@ const segmenter = Segmenter
   : null;
 // Repeated Chinese phrases are common even when message IDs/numbers differ.
 // Bound both retained text/terms and entry count; never cache arbitrary long runs.
-const chineseCache = new Map<string, { terms: string[]; bytes: number }>();
+const chineseCache = new Map<
+  string,
+  { key: string; terms: string[]; bytes: number }
+>();
 const CHINESE_CACHE_BYTES = 4 * 1024 * 1024;
+const cacheEncoder = new TextEncoder();
+const cacheDecoder = new TextDecoder();
+// CJK_RE matches valid BMP characters. A byte round trip owns its backing
+// storage, unlike substring/slice copies that can retain an entire message.
+const detachedCjk = (text: string): string =>
+  cacheDecoder.decode(cacheEncoder.encode(text));
 let chineseCacheBytes = 0;
-function segmentedTerms(sequence: string): string[] {
+function* segmentedTerms(sequence: string): Generator<string> {
   const cached = chineseCache.get(sequence);
   if (cached) {
     chineseCache.delete(sequence);
-    chineseCache.set(sequence, cached);
-    return cached.terms;
+    chineseCache.set(cached.key, cached);
+    yield* cached.terms;
+    return;
   }
   const terms: string[] = [];
-  for (const part of segmenter!.segment(sequence))
+  let bytes = 128 + sequence.length * 2;
+  let cacheable = bytes <= CHINESE_CACHE_BYTES / 16;
+  for (const part of segmenter!.segment(sequence)) {
     if (
       part.isWordLike &&
       part.segment.length > 1 &&
       !ZH_STOP.has(part.segment)
-    )
-      terms.push(part.segment);
-  const bytes =
-    128 +
-    sequence.length * 2 +
-    terms.reduce((n, term) => n + 32 + term.length * 2, 0);
-  if (bytes <= CHINESE_CACHE_BYTES / 16) {
+    ) {
+      if (cacheable) {
+        bytes += 32 + part.segment.length * 2;
+        if (bytes <= CHINESE_CACHE_BYTES / 16) terms.push(part.segment);
+        else {
+          cacheable = false;
+          terms.length = 0;
+        }
+      }
+      yield part.segment;
+    }
+  }
+  if (cacheable) {
     while (
       chineseCache.size &&
       (chineseCacheBytes + bytes > CHINESE_CACHE_BYTES ||
@@ -265,32 +333,60 @@ function segmentedTerms(sequence: string): string[] {
       chineseCacheBytes -= chineseCache.get(key)!.bytes;
       chineseCache.delete(key);
     }
-    chineseCache.set(sequence, { terms, bytes });
+    const key = detachedCjk(sequence);
+    chineseCache.set(key, { key, terms: terms.map(detachedCjk), bytes });
     chineseCacheBytes += bytes;
   }
-  return terms;
 }
 export function chineseTerms(text: string, useSegmenter = true): string[] {
-  const output: string[] = [];
+  return [...iterateChineseTerms(text, useSegmenter)];
+}
+function* iterateChineseTerms(
+  text: string,
+  useSegmenter = true,
+): Generator<string> {
   let remaining = text;
   for (const term of TECH_TERMS) {
     if (!remaining.includes(term)) continue;
-    const pieces = remaining.split(term);
-    for (let i = 1; i < pieces.length; i++) output.push(term);
-    remaining = pieces.join(" ");
+    for (
+      let at = remaining.indexOf(term);
+      at !== -1;
+      at = remaining.indexOf(term, at + term.length)
+    )
+      yield term;
+    remaining = remaining.replaceAll(term, " ");
   }
-  for (const match of remaining.matchAll(CJK_RE)) {
+  for (const sequence of cjkRuns(remaining)) {
     if (segmenter && useSegmenter) {
-      for (const term of segmentedTerms(match[0])) output.push(term);
+      yield* segmentedTerms(sequence);
     } else {
-      const sequence = match[0];
       for (let i = 0; i < sequence.length - 1; i++) {
         const term = sequence.slice(i, i + 2);
-        if (!ZH_STOP.has(term)) output.push(term);
+        if (!ZH_STOP.has(term)) yield term;
       }
     }
   }
-  return output;
+}
+
+/** Match CJK_RE's ranges without match objects or RegExp's retained last input. */
+function* cjkRuns(text: string): Generator<string> {
+  for (let cursor = 0; cursor < text.length; ) {
+    // Keep long scans in an ordinary function; suspend only once per CJK run.
+    const start = cjkBoundary(text, cursor, false);
+    if (start === text.length) return;
+    const end = cjkBoundary(text, start + 1, true);
+    yield text.slice(start, end);
+    cursor = end;
+  }
+}
+function cjkBoundary(text: string, from: number, withinRun: boolean): number {
+  for (; from < text.length; from++) {
+    const code = text.charCodeAt(from);
+    const cjk =
+      code >= 0x3400 && (code <= 0x4dbf || (code >= 0x4e00 && code <= 0x9fff));
+    if (cjk !== withinRun) break;
+  }
+  return from;
 }
 
 function countMatches(text: string, regex: RegExp, lengths = false): number {

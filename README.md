@@ -77,3 +77,5 @@ The frontend review fixes and regression coverage are documented in [review-fixe
 The second review's data-integrity, performance and accessibility changes are documented in [review-fixes-2026-10-22.md](docs/review-fixes-2026-10-22.md).
 
 Large-export optimizations, complete-report equivalence checks and timing variability are documented in [performance-2026-10-22.md](docs/performance-2026-10-22.md). Generate the 510,000-message synthetic fixture with `node scripts/generate-large-export.mjs /tmp/chatgpt-wrapped-synthetic`.
+
+Follow-up work on long-message previews, streaming term counts, bounded Chinese-cache backing storage and report-JSON size checks is documented in [long-message-performance-2026-10-22.md](docs/long-message-performance-2026-10-22.md).

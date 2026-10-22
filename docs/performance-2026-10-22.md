@@ -50,7 +50,7 @@ npm run build:pages
 npm run test:e2e
 ```
 
-The suite contains 133 data tests and 55 browser cases per project. Local browser verification uses Chromium desktop and mobile; CI additionally runs Firefox and WebKit. Pages deployment waits for all browser projects. Firefox/WebKit results must be read from CI, not inferred from the local Chromium run.
+At this checkpoint the suite contained 133 data tests and 55 browser cases per project; follow-up coverage is documented in [long-message-performance-2026-10-22.md](long-message-performance-2026-10-22.md). Local browser verification uses Chromium desktop and mobile; CI additionally runs Firefox and WebKit. Pages deployment waits for all browser projects. Firefox/WebKit results must be read from CI, not inferred from the local Chromium run.
 
 Generate the same message/content distribution and expected-count manifest:
 

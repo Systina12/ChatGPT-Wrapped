@@ -3,6 +3,7 @@ import type { WrappedData } from "../../types/wrapped";
 import { DEFAULT_OPTIONS } from "../../types/options";
 import { validateOptions } from "../stats/scope";
 import { isCalendarDay, toDate } from "../stats/time";
+import { exceedsUtf8Bytes } from "./utf8";
 export const MAX_REPORT_BYTES = 20 * 1024 * 1024;
 const count = z.number().finite().int().nonnegative();
 const isTimestamp = (value: string): boolean =>
@@ -363,7 +364,7 @@ export function restoreReport(value: unknown): WrappedData {
   };
 }
 export function restoreReportText(text: string): WrappedData {
-  if (new Blob([text]).size > MAX_REPORT_BYTES)
+  if (exceedsUtf8Bytes(text, MAX_REPORT_BYTES))
     throw new Error("Report import exceeds 20 MiB / 汇总报告超过 20 MiB");
   let value: unknown;
   try {

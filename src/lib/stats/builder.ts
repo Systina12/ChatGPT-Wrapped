@@ -31,7 +31,13 @@ import type {
   WrappedData,
   WrappedMeta,
 } from "../../types/wrapped";
-import { excerpt, textTerms, topTerms, messageTextStats } from "./text";
+import {
+  excerpt,
+  textTerms,
+  topTerms,
+  messageTextStats,
+  forEachTermCount,
+} from "./text";
 import { topK } from "./topK";
 import {
   calendarDate,
@@ -602,8 +608,8 @@ function frequentWords(
     user = new Map<string, number>(),
     assistant = new Map<string, number>();
   const monthly = new Map<string, Map<string, number>>();
-  const add = (counter: Map<string, number>, term: string) =>
-    counter.set(term, (counter.get(term) || 0) + 1);
+  const add = (counter: Map<string, number>, term: string, amount = 1) =>
+    counter.set(term, (counter.get(term) || 0) + amount);
   const interval = Math.max(1000, Math.ceil(messages.length / 50));
   messages.forEach((message, index) => {
     const month = message.day?.slice(0, 7) ?? null;
@@ -612,12 +618,21 @@ function frequentWords(
       monthCounter = new Map();
       monthly.set(month, monthCounter);
     }
-    for (const term of textTerms(message.message.text || "")) {
-      add(all, term);
-      if (message.message.role === "user") add(user, term);
-      if (message.message.role === "assistant") add(assistant, term);
-      if (monthCounter) add(monthCounter, term);
-    }
+    const text = message.message.text || "";
+    if (text.length > 4096) {
+      forEachTermCount(text, (term, count) => {
+        add(all, term, count);
+        if (message.message.role === "user") add(user, term, count);
+        if (message.message.role === "assistant") add(assistant, term, count);
+        if (monthCounter) add(monthCounter, term, count);
+      });
+    } else
+      for (const term of textTerms(text)) {
+        add(all, term);
+        if (message.message.role === "user") add(user, term);
+        if (message.message.role === "assistant") add(assistant, term);
+        if (monthCounter) add(monthCounter, term);
+      }
     if ((index + 1) % interval === 0) progress?.((index + 1) / messages.length);
   });
   return {
