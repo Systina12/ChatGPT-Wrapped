@@ -4,6 +4,7 @@ import {
   importZip,
   ready,
   sampleReport,
+  touchGestureEvent,
   visit,
 } from "./browserHelpers";
 import { conversation, jsonEntry, message } from "./fixtures";
@@ -80,37 +81,24 @@ test("horizontal touch gestures change pages", async ({ page }) => {
   await page
     .getByRole("button", { name: "Enter my annual report", exact: true })
     .click();
-  const surface = page.locator(".annual-page");
-  await surface.dispatchEvent("touchstart", {
-    touches: [{ identifier: 1, clientX: 270, clientY: 300 }],
-  });
-  await surface.dispatchEvent("touchend", {
-    changedTouches: [{ identifier: 1, clientX: 70, clientY: 305 }],
-  });
+  await touchGestureEvent(page, ".annual-page", "touchstart", 270, 300);
+  await touchGestureEvent(page, ".annual-page", "touchend", 70, 305);
   await expect(
     page.getByRole("heading", {
       name: "One question opens a world.",
       exact: true,
     }),
   ).toBeVisible();
-  await page.locator(".annual-page").dispatchEvent("touchstart", {
-    touches: [{ identifier: 1, clientX: 70, clientY: 300 }],
-  });
-  await page.locator(".annual-page").dispatchEvent("touchend", {
-    changedTouches: [{ identifier: 1, clientX: 270, clientY: 302 }],
-  });
+  await touchGestureEvent(page, ".annual-page", "touchstart", 70, 300);
+  await touchGestureEvent(page, ".annual-page", "touchend", 270, 302);
   await expect(page.getByTestId("story-message-count")).toBeVisible();
 });
 test("vertical touch gestures do not flip pages", async ({ page }) => {
   await page
     .getByRole("button", { name: "Enter my annual report", exact: true })
     .click();
-  await page.locator(".annual-page").dispatchEvent("touchstart", {
-    touches: [{ identifier: 1, clientX: 100, clientY: 100 }],
-  });
-  await page.locator(".annual-page").dispatchEvent("touchend", {
-    changedTouches: [{ identifier: 1, clientX: 130, clientY: 300 }],
-  });
+  await touchGestureEvent(page, ".annual-page", "touchstart", 100, 100);
+  await touchGestureEvent(page, ".annual-page", "touchend", 130, 300);
   await expect(page.getByTestId("story-message-count")).toBeVisible();
 });
 test("statistics, warnings and JSON remain accessible from the story", async ({
