@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import type {
   CountMap,
   Distribution,
@@ -40,7 +40,12 @@ export function Metrics({ data }: { data: WrappedData }) {
       {metrics.map(([label, value, testId]) => (
         <article className="metric" key={testId}>
           <span className="metric-label">{label}</span>
-          <strong data-testid={`metric-${testId}`}>{number(value)}</strong>
+          <strong
+            data-testid={`metric-${testId}`}
+            style={{ "--metric-length": number(value).length } as CSSProperties}
+          >
+            {number(value)}
+          </strong>
         </article>
       ))}
     </div>

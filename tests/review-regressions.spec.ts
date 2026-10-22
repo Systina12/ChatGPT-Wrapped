@@ -12,6 +12,34 @@ test.beforeEach(async ({ page }) => {
   await visit(page);
 });
 
+test("large overview numbers stay on one line within every metric card", async ({
+  page,
+}) => {
+  const report = await sampleReport();
+  report.overview.total_character_count = 11626912;
+  await importReport(page, report);
+  await ready(page);
+  await expect(page.getByTestId("metric-characters")).toHaveText("11,626,912");
+  for (const width of [320, 393, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const measurements = await page.locator(".metric strong").evaluateAll((items) =>
+      items.map((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return {
+          lines: range.getClientRects().length,
+          textWidth: range.getBoundingClientRect().width,
+          availableWidth: element.clientWidth,
+        };
+      }),
+    );
+    for (const measurement of measurements) {
+      expect(measurement.lines).toBe(1);
+      expect(measurement.textWidth).toBeLessThanOrEqual(measurement.availableWidth);
+    }
+  }
+});
+
 test("damaged message nodes report an error instead of an empty success", async ({
   page,
 }) => {

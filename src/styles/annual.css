@@ -276,6 +276,7 @@ button:hover:not(:disabled) {
   border-bottom: 1px solid var(--ink);
 }
 .metric {
+  container-type: inline-size;
   min-height: 130px;
   background: transparent;
   border: 0;
@@ -291,9 +292,14 @@ button:hover:not(:disabled) {
   border: 0;
 }
 .metric strong {
-  font-size: clamp(1.8rem, 2.8vw, 2.8rem);
+  --metric-max-size: clamp(1.8rem, 2.8vw, 2.8rem);
+  font-size: min(
+    var(--metric-max-size),
+    calc(170cqi / var(--metric-length, 6))
+  );
   font-weight: 750;
   letter-spacing: -0.055em;
+  white-space: nowrap;
 }
 .metric-label {
   font-size: 0.73rem;
@@ -948,7 +954,7 @@ button:hover:not(:disabled) {
     min-height: 105px;
   }
   .metric strong {
-    font-size: 1.8rem;
+    --metric-max-size: 1.8rem;
     margin-top: 14px;
   }
   .metric-label {
