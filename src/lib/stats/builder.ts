@@ -78,7 +78,7 @@ interface BuildContext {
   messages: MessageWithStats[];
   assets: AssetWithStats[];
   aggregates?: ConversationAggregate[];
-  messageTimes?: Map<string, Date | null>;
+  messageTimes?: Map<string | null, Map<string, Date | null>>;
 }
 
 interface ConversationAggregate {
@@ -337,7 +337,7 @@ function timeline(context: BuildContext): TimelineStats {
       return;
     }
     const createdAt = asset.messageId
-      ? messageTimes.get(`${asset.conversationId}\0${asset.messageId}`)
+      ? messageTimes.get(asset.conversationId)?.get(asset.messageId)
       : null;
     if (createdAt) {
       addBucketMetric(buckets, createdAt, `${asset.category}_count`, 1);
@@ -430,15 +430,24 @@ function conversationStats(context: BuildContext): ConversationStats {
 }
 
 function messageStats(messages: MessageWithStats[]): MessageStats {
-  const user = messages.filter((message) => message.message.role === "user");
-  const assistant = messages.filter(
-    (message) => message.message.role === "assistant",
-  );
+  const userLengths = emptyDistribution();
+  const assistantLengths = emptyDistribution();
+  const allLengths = emptyDistribution();
+  let userCharacters = 0;
+  let assistantCharacters = 0;
   const punctuation = { question_marks: 0, exclamation_marks: 0 };
   let urls = 0;
   let codeBlocks = 0;
 
   messages.forEach((message) => {
+    addDistributionValue(allLengths, message.characterCount);
+    if (message.message.role === "user") {
+      addDistributionValue(userLengths, message.characterCount);
+      userCharacters += message.characterCount;
+    } else if (message.message.role === "assistant") {
+      addDistributionValue(assistantLengths, message.characterCount);
+      assistantCharacters += message.characterCount;
+    }
     const counts = message.textStats;
     punctuation.question_marks += counts.question_marks;
     punctuation.exclamation_marks += counts.exclamation_marks;
@@ -446,26 +455,24 @@ function messageStats(messages: MessageWithStats[]): MessageStats {
     codeBlocks += counts.codeBlocks;
   });
 
+  function* byRole(role: string) {
+    for (const item of messages)
+      if (item.message.role === role) yield item;
+  }
   return {
-    user_length_distribution: distribution(
-      user.map((message) => message.characterCount),
-    ),
-    assistant_length_distribution: distribution(
-      assistant.map((message) => message.characterCount),
-    ),
-    all_length_distribution: distribution(
-      messages.map((message) => message.characterCount),
-    ),
+    user_length_distribution: userLengths,
+    assistant_length_distribution: assistantLengths,
+    all_length_distribution: allLengths,
     user_to_assistant_character_ratio: safeRatio(
-      sum(user.map((message) => message.characterCount)),
-      sum(assistant.map((message) => message.characterCount)),
+      userCharacters,
+      assistantCharacters,
     ),
     question_marks: punctuation.question_marks,
     exclamation_marks: punctuation.exclamation_marks,
     url_count: urls,
     code_block_count: codeBlocks,
-    longest_user_messages: topMessages(user),
-    longest_assistant_messages: topMessages(assistant),
+    longest_user_messages: topMessages(byRole("user")),
+    longest_assistant_messages: topMessages(byRole("assistant")),
   };
 }
 
@@ -481,28 +488,27 @@ function modelStats(messages: MessageWithStats[]): ModelStats {
   >();
   const monthly = new Map<string, Map<string, number>>();
 
-  messages
-    .filter((message) => message.message.role === "assistant")
-    .forEach((message) => {
-      const model = message.message.modelSlug || "unknown";
-      const stats = byModel.get(model) || {
-        messageCount: 0,
-        characterCount: 0,
-        firstSeenAt: null,
-        lastSeenAt: null,
-      };
-      stats.messageCount += 1;
-      stats.characterCount += message.characterCount;
-      if (message.createdAt) {
-        stats.firstSeenAt = minDate(stats.firstSeenAt, message.createdAt);
-        stats.lastSeenAt = maxDate(stats.lastSeenAt, message.createdAt);
-        const month = message.day!.slice(0, 7);
-        const monthCounter = monthly.get(month) || new Map<string, number>();
-        monthCounter.set(model, (monthCounter.get(model) || 0) + 1);
-        monthly.set(month, monthCounter);
-      }
-      byModel.set(model, stats);
-    });
+  for (const message of messages) {
+    if (message.message.role !== "assistant") continue;
+    const model = message.message.modelSlug || "unknown";
+    const stats = byModel.get(model) || {
+      messageCount: 0,
+      characterCount: 0,
+      firstSeenAt: null,
+      lastSeenAt: null,
+    };
+    stats.messageCount += 1;
+    stats.characterCount += message.characterCount;
+    if (message.createdAt) {
+      stats.firstSeenAt = minDate(stats.firstSeenAt, message.createdAt);
+      stats.lastSeenAt = maxDate(stats.lastSeenAt, message.createdAt);
+      const month = message.day!.slice(0, 7);
+      const monthCounter = monthly.get(month) || new Map<string, number>();
+      monthCounter.set(model, (monthCounter.get(model) || 0) + 1);
+      monthly.set(month, monthCounter);
+    }
+    byModel.set(model, stats);
+  }
 
   const models: ModelUsage[] = [...byModel.entries()]
     .map(([model, stats]) => ({
@@ -547,7 +553,7 @@ function assetStats(context: BuildContext): AssetStats {
 
   usableAssets.forEach((asset) => {
     const createdAt = asset.messageId
-      ? messageTimes.get(`${asset.conversationId}\0${asset.messageId}`)
+      ? messageTimes.get(asset.conversationId)?.get(asset.messageId)
       : null;
     if (!createdAt) {
       return;
@@ -774,25 +780,24 @@ function selectedAggregates(context: BuildContext): ConversationAggregate[] {
 
 function selectedMessageTimes(context: BuildContext) {
   if (!context.messageTimes) {
-    context.messageTimes = new Map();
     // Resolve only messages actually referenced by attachments. A text-heavy
-    // export must not allocate a second string-keyed index for every message.
-    const wanted = new Map<string | null, Set<string>>();
+    // export must not allocate a second index for every message. Reuse this
+    // exact-pair index for lookups instead of constructing composite strings.
+    const wanted = new Map<string | null, Map<string, Date | null>>();
     for (const asset of context.assets) {
       if (asset.source === "library_file" || !asset.messageId) continue;
       let ids = wanted.get(asset.conversationId);
-      if (!ids) wanted.set(asset.conversationId, (ids = new Set()));
-      ids.add(asset.messageId);
+      if (!ids) wanted.set(asset.conversationId, (ids = new Map()));
+      ids.set(asset.messageId, null);
     }
     if (wanted.size)
       for (const item of context.messages) {
         const message = item.message;
-        if (wanted.get(message.conversationId)?.has(message.messageId))
-          context.messageTimes.set(
-            `${message.conversationId}\0${message.messageId}`,
-            item.calendarAt,
-          );
+        const ids = wanted.get(message.conversationId);
+        if (ids?.has(message.messageId))
+          ids.set(message.messageId, item.calendarAt);
       }
+    context.messageTimes = wanted;
   }
   return context.messageTimes;
 }
@@ -891,7 +896,7 @@ function topConversations(
 }
 
 function topMessages(
-  messages: MessageWithStats[],
+  messages: Iterable<MessageWithStats>,
   limit = TOP_N,
 ): TopMessage[] {
   return topK(
@@ -971,8 +976,8 @@ function conversationSummary(item: ConversationAggregate): ConversationSummary {
   };
 }
 
-function distribution(values: number[]): Distribution {
-  const buckets: Distribution = {
+function emptyDistribution(): Distribution {
+  return {
     zero: 0,
     one_to_two: 0,
     three_to_five: 0,
@@ -981,15 +986,21 @@ function distribution(values: number[]): Distribution {
     thirty_one_to_one_hundred: 0,
     over_one_hundred: 0,
   };
-  values.forEach((value) => {
-    if (value <= 0) buckets.zero += 1;
-    else if (value <= 2) buckets.one_to_two += 1;
-    else if (value <= 5) buckets.three_to_five += 1;
-    else if (value <= 10) buckets.six_to_ten += 1;
-    else if (value <= 30) buckets.eleven_to_thirty += 1;
-    else if (value <= 100) buckets.thirty_one_to_one_hundred += 1;
-    else buckets.over_one_hundred += 1;
-  });
+}
+
+function addDistributionValue(buckets: Distribution, value: number): void {
+  if (value <= 0) buckets.zero += 1;
+  else if (value <= 2) buckets.one_to_two += 1;
+  else if (value <= 5) buckets.three_to_five += 1;
+  else if (value <= 10) buckets.six_to_ten += 1;
+  else if (value <= 30) buckets.eleven_to_thirty += 1;
+  else if (value <= 100) buckets.thirty_one_to_one_hundred += 1;
+  else buckets.over_one_hundred += 1;
+}
+
+function distribution(values: number[]): Distribution {
+  const buckets = emptyDistribution();
+  for (const value of values) addDistributionValue(buckets, value);
   return buckets;
 }
 
@@ -1036,8 +1047,4 @@ function maxDate(left: Date | null, right: Date): Date {
 
 function safeRatio(left: number, right: number): number | null {
   return right === 0 ? null : Math.round((left / right) * 10_000) / 10_000;
-}
-
-function sum(values: number[]): number {
-  return values.reduce((total, value) => total + value, 0);
 }

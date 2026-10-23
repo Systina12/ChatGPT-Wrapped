@@ -125,6 +125,7 @@ export function scopeExport(
         branches.set(c.conversationId, currentNodes(c, warnings));
   const eligibleIds = new Set(eligible.map((c) => c.conversationId));
   const firstTimes = new Map<string, number>();
+  const conversationIds = new Set<string>();
   let undated = 0;
   const messages = parsed.messages.filter((message) => {
     if (
@@ -158,6 +159,9 @@ export function scopeExport(
       if (time < (firstTimes.get(message.conversationId) ?? Infinity))
         firstTimes.set(message.conversationId, time);
     }
+    if (message.conversationId) {
+      conversationIds.add(message.conversationId);
+    }
     return true;
   });
   if (undated)
@@ -165,21 +169,70 @@ export function scopeExport(
       code: "undated_messages_excluded",
       message: `${undated} undated messages excluded by date range / 条无日期消息已排除`,
     });
-  const conversationIds = new Set(
-    messages.map((m) => m.conversationId).filter((id): id is string => !!id),
-  );
-  const messageKeys = new Set(
-    messages.map((m) => `${m.conversationId}\0${m.messageId}`),
-  );
-  const messageIds = new Set(messages.map((m) => m.messageId));
+  // Index the smaller side of the selection/reference join. Text-heavy exports
+  // need no message-sized index; narrow selections need no attachment-sized one.
+  // Nested maps preserve exact pairs without delimiter-key collisions.
+  const scopedLinks = new Map<string, Map<string, boolean>>();
+  const unscopedLinks = new Map<string, boolean>();
+  const forEachReference = (
+    visit: (conversationId: string | null, messageId: string) => void,
+  ) => {
+    const include = (conversationId: string | null, messageId: string | null) => {
+      if (messageId && (!conversationId || conversationIds.has(conversationId)))
+        visit(conversationId, messageId);
+    };
+    for (const asset of parsed.assets)
+      if (asset.source !== "library_file")
+        include(asset.conversationId, asset.messageId);
+    for (const item of parsed.feedback)
+      include(item.conversationId, item.messageId);
+    for (const file of parsed.libraryFiles)
+      include(file.initiatingConversationId, file.originationMessageId);
+  };
+  const reference = (
+    conversationId: string | null,
+    messageId: string,
+    selected = false,
+  ) => {
+    if (!conversationId) {
+      unscopedLinks.set(messageId, selected);
+      return;
+    }
+    let ids = scopedLinks.get(conversationId);
+    if (!ids) scopedLinks.set(conversationId, (ids = new Map()));
+    ids.set(messageId, selected);
+  };
+  let referenceCount = 0;
+  let hasUnscoped = false;
+  forEachReference((conversationId) => {
+    referenceCount++;
+    if (!conversationId) hasUnscoped = true;
+  });
+  if (referenceCount > messages.length) {
+    for (const message of messages) {
+      if (message.conversationId)
+        reference(message.conversationId, message.messageId, true);
+      if (hasUnscoped) unscopedLinks.set(message.messageId, true);
+    }
+  } else if (referenceCount) {
+    forEachReference(reference);
+    for (const message of messages) {
+      const ids = message.conversationId
+        ? scopedLinks.get(message.conversationId)
+        : undefined;
+      if (ids?.has(message.messageId)) ids.set(message.messageId, true);
+      if (unscopedLinks.has(message.messageId))
+        unscopedLinks.set(message.messageId, true);
+    }
+  }
   const linked = (item: {
     conversationId: string | null;
     messageId: string | null;
   }) =>
     item.messageId
       ? item.conversationId
-        ? messageKeys.has(`${item.conversationId}\0${item.messageId}`)
-        : messageIds.has(item.messageId)
+        ? scopedLinks.get(item.conversationId)?.get(item.messageId) === true
+        : unscopedLinks.get(item.messageId) === true
       : !!item.conversationId && conversationIds.has(item.conversationId);
   const preserveEmpty =
     !bounds && options.roles === "all" && options.branches === "all";

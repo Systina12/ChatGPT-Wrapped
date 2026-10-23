@@ -79,3 +79,5 @@ The second review's data-integrity, performance and accessibility changes are do
 Large-export optimizations, complete-report equivalence checks and timing variability are documented in [performance-2026-10-22.md](docs/performance-2026-10-22.md). Generate the 510,000-message synthetic fixture with `node scripts/generate-large-export.mjs /tmp/chatgpt-wrapped-synthetic`.
 
 Follow-up work on long-message previews, streaming term counts, bounded Chinese-cache backing storage and report-JSON size checks is documented in [long-message-performance-2026-10-22.md](docs/long-message-performance-2026-10-22.md).
+
+Adaptive scope joins and lower-allocation aggregate statistics are documented in [scope-performance-2026-10-23.md](docs/scope-performance-2026-10-23.md).
