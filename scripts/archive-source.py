@@ -20,6 +20,7 @@ command = ["git", "archive", "--format=zip", commit, "."] + [f":(exclude){path}"
 content = subprocess.check_output(command, cwd=root)
 required = {"src/lib/report/engine.ts", "src/lib/report/restore.ts", "src/lib/report/storage.ts", "src/lib/report/i18n.tsx", "src/lib/report/share.ts", "src/lib/stats/scope.ts", "src/types/options.ts", "src/components/report/ReportControls.tsx", "src/components/report/ShareCard.tsx", "src/styles/features.css", "tests/data.test.ts", "tests/features.test.ts", "tests/import.spec.ts", "tests/features.spec.ts", "playwright.config.ts", ".github/workflows/checks.yml", "package-lock.json"}
 if args.require_annual:
+    required.update({"AGENTS.md", "docs/performance-compatibility.md", "tests/compatibility.test.ts", "tests/compatibility/fixtures.ts", "tests/compatibility/baseline-v2.json"})
     required.add("docs/scope-performance-2026-10-23.md")
     required.update({"src/lib/report/utf8.ts", "tests/long-text.test.ts", "docs/long-message-performance-2026-10-22.md"})
     required.update({"src/lib/stats/topK.ts", "tests/performance.test.ts", "scripts/generate-large-export.mjs", "docs/performance-2026-10-22.md"})

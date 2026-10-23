@@ -14,7 +14,7 @@ import type {
   ParseWarning,
   SourceFile,
 } from "../../types/export";
-import { classifyAsset, mergeAssets, pathExtension } from "./assets";
+import { assetExtension, classifyAsset, mergeAssets, pathExtension } from "./assets";
 import {
   isRelevantJson,
   ImportLimitError,
@@ -42,6 +42,7 @@ class ExportParser {
   private readonly messages = new Map<string, ParsedMessage>();
   private readonly assets: ParsedAsset[] = [];
   private readonly messageAssets = new Map<string, ParsedAsset[]>();
+  private readonly pendingAssetExtensions = new Map<string, Set<string>>();
   private readonly libraryFiles: ParsedLibraryFile[] = [];
   private readonly feedback: ParsedFeedback[] = [];
   private readonly shares: ParsedShare[] = [];
@@ -90,6 +91,7 @@ class ExportParser {
     await this.parseShares();
     await this.parseUser();
     await this.parseUserSettings();
+    this.pendingAssetExtensions.clear();
 
     // The report only needs parent links for branch selection, never the full
     // original content/metadata object graph. Keep message-free and invalid nodes.
@@ -271,6 +273,7 @@ class ExportParser {
         const row = this.conversationRows.get(id);
         const previous =
           row === undefined ? undefined : this.conversations[row];
+        if (previous) this.mergePendingAssetExtensions(id);
         const result = previous
           ? this.mergeConversation(previous.raw as JsonObject, conversation, id)
           : { merged: conversation, changes: conversation };
@@ -552,6 +555,7 @@ class ExportParser {
           ) {
             this.messages.delete(messageKey);
             this.messageAssets.delete(messageKey);
+            this.pendingAssetExtensions.get(id)?.delete(oldId);
           }
         }
         changed[key] = node;
@@ -637,6 +641,7 @@ class ExportParser {
       const key = `${conversationId}\0${messageId}`;
       const previousAssets = this.messageAssets.get(key);
       this.messageAssets.delete(key);
+      this.pendingAssetExtensions.get(conversationId)?.delete(messageId);
       this.insertMessageAssets(conversationId, messageId, content, metadata);
       const incomingAssets = this.messageAssets.get(key);
       if (previousAssets && incomingAssets) {
@@ -651,8 +656,36 @@ class ExportParser {
           ]),
         );
       }
+      if (this.messageAssets.has(key)) {
+        let pending = this.pendingAssetExtensions.get(conversationId);
+        if (!pending)
+          this.pendingAssetExtensions.set(conversationId, (pending = new Set()));
+        pending.add(messageId);
+      }
     });
     return damagedNodes === 0 || validMessages > 0;
+  }
+
+  private mergePendingAssetExtensions(conversationId: string): void {
+    // The original full-shard merge inferred extensions when a prior attachment
+    // was encountered again. Preserve that metadata without re-reading every
+    // unchanged message or inserting duplicate assets. Each pending list is
+    // visited once; attachments first introduced in this shard stay unchanged.
+    const pending = this.pendingAssetExtensions.get(conversationId);
+    if (!pending) return;
+    for (const messageId of pending) {
+      const key = `${conversationId}\0${messageId}`;
+      const previous = this.messageAssets.get(key);
+      if (!previous) continue;
+      // Merge explicit metadata first: an inferred suffix from a later duplicate
+      // must never replace an earlier explicit library extension.
+      const assets = mergeAssets(previous);
+      for (const asset of assets)
+        if (!asset.fileExtension)
+          asset.fileExtension = assetExtension(asset) || null;
+      this.messageAssets.set(key, assets);
+    }
+    this.pendingAssetExtensions.delete(conversationId);
   }
 
   private insertGroupMessage(

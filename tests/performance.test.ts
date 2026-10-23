@@ -20,6 +20,46 @@ import {
 } from "../src/lib/stats/text";
 import { conversation, fixture, jsonEntry, message } from "./fixtures";
 
+it("keeps an explicit extension when overlapping attachment names suggest another suffix", async () => {
+  const first = conversation("explicit-extension");
+  Object.assign(first.mapping.root.message.metadata, {
+    attachments: [
+      { id: "shared", file_name: "first.png", size_bytes: 10 },
+      { id: "shared", file_name: "second.webm", size_bytes: 20 },
+    ],
+  });
+  const parsed = await parseExportEntries([
+    jsonEntry("conversations.json", [first]),
+    jsonEntry("conversations-1.json", [{ id: first.id, mapping: {} }]),
+    jsonEntry("library_files.json", [{ id: "library", file_id: "lib-first", file_name: "first.png", file_extension: "png", mime_type: "image/png" }]),
+  ]);
+  const attachment = parsed.assets.find((a) => a.source !== "library_file")!;
+  expect(attachment.displayName).toBe("second.webm");
+  expect(attachment.fileExtension).toBe("png");
+  expect(buildReport(parsed).assets.largest_assets[0].file_extension).toBe("png");
+});
+
+it.each([1, 2, 3])("preserves original extension enrichment across %i overlapping shards", async (shards) => {
+  const first = conversation("extensions");
+  Object.assign(first.mapping.root.message.metadata, {
+    attachments: [{ id: "original.webm", mime_type: "audio/webm", size_bytes: 10 }],
+  });
+  const added = message("added", "assistant");
+  Object.assign(added.metadata, {
+    attachments: [{ id: "new.webm", mime_type: "audio/webm", size_bytes: 20 }],
+  });
+  const entries = [
+    jsonEntry("conversations.json", [first]),
+    jsonEntry("conversations-1.json", [{ id: first.id, current_node: "extra", mapping: { extra: { parent: "answer", message: added } } }]),
+    jsonEntry("conversations-2.json", [{ id: first.id, mapping: {} }]),
+  ].slice(0, shards);
+  const parsed = await parseExportEntries(entries);
+  expect(parsed.assets.find((a) => a.localPath === "original.webm")?.fileExtension).toBe(shards > 1 ? "webm" : null);
+  if (shards > 1)
+    expect(parsed.assets.find((a) => a.localPath === "new.webm")?.fileExtension).toBe(shards > 2 ? "webm" : null);
+  expect(parsed.assets).toHaveLength(shards > 1 ? 2 : 1);
+});
+
 describe("sparse references under report filtering", () => {
   it.each([1, 50])("preserves duplicate feedback with %i references to a small selection", async (count) => {
     const parsed = await fixture();

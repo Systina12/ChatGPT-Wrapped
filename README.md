@@ -81,3 +81,5 @@ Large-export optimizations, complete-report equivalence checks and timing variab
 Follow-up work on long-message previews, streaming term counts, bounded Chinese-cache backing storage and report-JSON size checks is documented in [long-message-performance-2026-10-22.md](docs/long-message-performance-2026-10-22.md).
 
 Adaptive scope joins and lower-allocation aggregate statistics are documented in [scope-performance-2026-10-23.md](docs/scope-performance-2026-10-23.md).
+
+Performance work must preserve the pinned functional baseline. [The compatibility contract](docs/performance-compatibility.md) describes full-report/export checks; run them with `npm run test:compatibility`.
