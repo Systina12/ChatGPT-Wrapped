@@ -1,5 +1,7 @@
 import { mergeAssets, classifyAsset, assetExtension } from "../export/assets";
+import { conversationMaps } from "../export/identity";
 import type {
+  ConversationSource,
   ParsedAsset,
   ParsedConversation,
   ParsedExport,
@@ -78,13 +80,16 @@ interface BuildContext {
   messages: MessageWithStats[];
   assets: AssetWithStats[];
   aggregates?: ConversationAggregate[];
-  messageTimes?: Map<string | null, Map<string, Date | null>>;
+  messageTimes?: Record<
+    ConversationSource,
+    Map<string | null, Map<string, Date | null>>
+  >;
 }
 
 interface ConversationAggregate {
   rowId: number;
   conversationId: string;
-  source: string;
+  source: ConversationSource;
   title: string | null;
   createdAt: Date | null;
   createdAtText: string | null;
@@ -337,7 +342,8 @@ function timeline(context: BuildContext): TimelineStats {
       return;
     }
     const createdAt = asset.messageId
-      ? messageTimes.get(asset.conversationId)?.get(asset.messageId)
+      ? messageTimes[asset.conversationSource || "conversation"]
+          .get(asset.conversationId)?.get(asset.messageId)
       : null;
     if (createdAt) {
       addBucketMetric(buckets, createdAt, `${asset.category}_count`, 1);
@@ -553,7 +559,8 @@ function assetStats(context: BuildContext): AssetStats {
 
   usableAssets.forEach((asset) => {
     const createdAt = asset.messageId
-      ? messageTimes.get(asset.conversationId)?.get(asset.messageId)
+      ? messageTimes[asset.conversationSource || "conversation"]
+          .get(asset.conversationId)?.get(asset.messageId)
       : null;
     if (!createdAt) {
       return;
@@ -657,6 +664,13 @@ function qualityStats(
   context: BuildContext,
   conversations: ConversationStats,
 ): QualityStats {
+  const feedbackConversations = conversationMaps<true>();
+  for (const item of context.parsed.feedback)
+    if (item.conversationId)
+      feedbackConversations[item.conversationSource || "conversation"].set(
+        item.conversationId,
+        true,
+      );
   return {
     feedback_count: context.parsed.feedback.length,
     feedback_by_rating: Object.fromEntries(
@@ -665,11 +679,9 @@ function qualityStats(
     shared_conversation_count: new Set(
       context.parsed.shares.map((item) => item.conversationId).filter(Boolean),
     ).size,
-    conversations_with_feedback_count: new Set(
-      context.parsed.feedback
-        .map((item) => item.conversationId)
-        .filter(Boolean),
-    ).size,
+    conversations_with_feedback_count:
+      feedbackConversations.conversation.size +
+      feedbackConversations.group_chat.size,
     high_interaction_conversations: conversations.longest_by_messages,
     high_asset_conversations: conversations.most_assets,
     high_character_conversations: conversations.longest_by_characters,
@@ -733,18 +745,19 @@ function conversationAggregates(
     });
   });
 
-  const byConversationId = new Map<string, number[]>();
+  const byConversationId = conversationMaps<number[]>();
   aggregates.forEach((item) => {
-    const rows = byConversationId.get(item.conversationId) || [];
+    const rows = byConversationId[item.source].get(item.conversationId) || [];
     rows.push(item.rowId);
-    byConversationId.set(item.conversationId, rows);
+    byConversationId[item.source].set(item.conversationId, rows);
   });
 
   context.messages.forEach((message) => {
     if (!message.message.conversationId) {
       return;
     }
-    const rowId = byConversationId.get(message.message.conversationId)?.[0];
+    const rowId = byConversationId[message.message.source]
+      .get(message.message.conversationId)?.[0];
     const aggregate = rowId ? aggregates.get(rowId) : undefined;
     if (!aggregate) {
       return;
@@ -764,7 +777,8 @@ function conversationAggregates(
     if (asset.source === "library_file" || !asset.conversationId) {
       return;
     }
-    const rowId = byConversationId.get(asset.conversationId)?.[0];
+    const rowId = byConversationId[asset.conversationSource || "conversation"]
+      .get(asset.conversationId)?.[0];
     const aggregate = rowId ? aggregates.get(rowId) : undefined;
     if (aggregate) {
       aggregate.assetCount += 1;
@@ -783,17 +797,18 @@ function selectedMessageTimes(context: BuildContext) {
     // Resolve only messages actually referenced by attachments. A text-heavy
     // export must not allocate a second index for every message. Reuse this
     // exact-pair index for lookups instead of constructing composite strings.
-    const wanted = new Map<string | null, Map<string, Date | null>>();
+    const wanted = conversationMaps<Map<string, Date | null>, string | null>();
     for (const asset of context.assets) {
       if (asset.source === "library_file" || !asset.messageId) continue;
-      let ids = wanted.get(asset.conversationId);
-      if (!ids) wanted.set(asset.conversationId, (ids = new Map()));
+      const source = asset.conversationSource || "conversation";
+      let ids = wanted[source].get(asset.conversationId);
+      if (!ids) wanted[source].set(asset.conversationId, (ids = new Map()));
       ids.set(asset.messageId, null);
     }
-    if (wanted.size)
+    if (wanted.conversation.size || wanted.group_chat.size)
       for (const item of context.messages) {
         const message = item.message;
-        const ids = wanted.get(message.conversationId);
+        const ids = wanted[message.source].get(message.conversationId);
         if (ids?.has(message.messageId))
           ids.set(message.messageId, item.calendarAt);
       }

@@ -10,6 +10,7 @@ export function mergeAssets(assets: ParsedAsset[]): ParsedAsset[] {
   for (const item of assets) {
     const key = JSON.stringify([
       item.source === "library_file" ? "library" : "message",
+      item.conversationSource || "conversation",
       item.conversationId,
       item.messageId,
       item.localPath,

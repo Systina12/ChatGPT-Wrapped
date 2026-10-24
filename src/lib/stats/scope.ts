@@ -1,13 +1,16 @@
 import type {
+  ConversationSource,
   JsonObject,
   ParsedConversation,
   ParsedExport,
+  ParsedFeedback,
   ParsedMessage,
   ParseWarning,
 } from "../../types/export";
 import { DEFAULT_OPTIONS, type ReportOptions } from "../../types/options";
 import { isCalendarDay, toDate } from "./time";
 import { CalendarCache } from "./calendarCache";
+import { conversationMaps } from "../export/identity";
 
 export function validateOptions(value: unknown): ReportOptions {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -123,19 +126,66 @@ export function scopeExport(
     for (const c of eligible)
       if (c.source === "conversation")
         branches.set(c.conversationId, currentNodes(c, warnings));
-  const eligibleIds = new Set(eligible.map((c) => c.conversationId));
-  const firstTimes = new Map<string, number>();
-  const conversationIds = new Set<string>();
+  const eligibleIds = conversationMaps<true>();
+  for (const c of eligible) eligibleIds[c.source].set(c.conversationId, true);
+  // Ancillary exports have no source field. Resolve ambiguous IDs against the
+  // original message pair, indexing only references that actually need it.
+  const ambiguousIds = new Set<string>();
+  for (const c of parsed.conversations)
+    if (
+      c.source === "group_chat" &&
+      eligibleIds.conversation.has(c.conversationId)
+    )
+      ambiguousIds.add(c.conversationId);
+  const ambiguousLinks = new Map<string, Map<string, ConversationSource | null>>();
+  if (ambiguousIds.size) {
+    const remember = (id: string | null, mid: string | null) => {
+      if (!id || !mid || !ambiguousIds.has(id)) return;
+      let ids = ambiguousLinks.get(id);
+      if (!ids) ambiguousLinks.set(id, (ids = new Map()));
+      ids.set(mid, null);
+    };
+    for (const item of parsed.feedback)
+      remember(item.conversationId, item.messageId);
+    for (const file of parsed.libraryFiles)
+      remember(file.initiatingConversationId, file.originationMessageId);
+    for (const asset of parsed.assets)
+      if (asset.source !== "library_file" && !asset.conversationSource)
+        remember(asset.conversationId, asset.messageId);
+    if (ambiguousLinks.size)
+      for (const message of parsed.messages) {
+        const ids = message.conversationId
+          ? ambiguousLinks.get(message.conversationId)
+          : undefined;
+        if (
+          ids?.has(message.messageId) &&
+          ids.get(message.messageId) !== "conversation"
+        )
+          ids.set(message.messageId, message.source);
+      }
+  }
+  // If even the full pair (or a conversation-only reference) is ambiguous,
+  // ordinary-conversation ancillary exports take precedence.
+  const relatedSource = (
+    id: string | null,
+    mid?: string | null,
+  ): ConversationSource =>
+    (id && mid && ambiguousLinks.get(id)?.get(mid)) ||
+    (id && !eligibleIds.conversation.has(id) ? "group_chat" : "conversation");
+  const firstTimes = conversationMaps<number>();
+  const conversationIds = conversationMaps<true>();
   let undated = 0;
   const messages = parsed.messages.filter((message) => {
     if (
-      (message.conversationId && !eligibleIds.has(message.conversationId)) ||
+      (message.conversationId &&
+        !eligibleIds[message.source].has(message.conversationId)) ||
       (!options.includeGroups && message.source === "group_chat")
     )
       return false;
-    const branch = message.conversationId
-      ? branches.get(message.conversationId)
-      : null;
+    const branch =
+      message.source === "conversation" && message.conversationId
+        ? branches.get(message.conversationId)
+        : null;
     if (branch && (!message.nodeId || !branch.has(message.nodeId)))
       return false;
     if (
@@ -156,11 +206,12 @@ export function scopeExport(
     }
     if (date && message.conversationId) {
       const time = date.getTime();
-      if (time < (firstTimes.get(message.conversationId) ?? Infinity))
-        firstTimes.set(message.conversationId, time);
+      const times = firstTimes[message.source];
+      if (time < (times.get(message.conversationId) ?? Infinity))
+        times.set(message.conversationId, time);
     }
     if (message.conversationId) {
-      conversationIds.add(message.conversationId);
+      conversationIds[message.source].set(message.conversationId, true);
     }
     return true;
   });
@@ -172,24 +223,38 @@ export function scopeExport(
   // Index the smaller side of the selection/reference join. Text-heavy exports
   // need no message-sized index; narrow selections need no attachment-sized one.
   // Nested maps preserve exact pairs without delimiter-key collisions.
-  const scopedLinks = new Map<string, Map<string, boolean>>();
+  const scopedLinks = conversationMaps<Map<string, boolean>>();
+  // Without a conversation ID, references intentionally match any selected
+  // message with that ID, preserving the existing unscoped-reference contract.
   const unscopedLinks = new Map<string, boolean>();
   const forEachReference = (
-    visit: (conversationId: string | null, messageId: string) => void,
+    visit: (
+      source: ConversationSource,
+      conversationId: string | null,
+      messageId: string,
+    ) => void,
   ) => {
-    const include = (conversationId: string | null, messageId: string | null) => {
-      if (messageId && (!conversationId || conversationIds.has(conversationId)))
-        visit(conversationId, messageId);
+    const include = (
+      conversationId: string | null,
+      messageId: string | null,
+      source: ConversationSource = relatedSource(conversationId, messageId),
+    ) => {
+      if (
+        messageId &&
+        (!conversationId || conversationIds[source].has(conversationId))
+      )
+        visit(source, conversationId, messageId);
     };
     for (const asset of parsed.assets)
       if (asset.source !== "library_file")
-        include(asset.conversationId, asset.messageId);
+        include(asset.conversationId, asset.messageId, asset.conversationSource);
     for (const item of parsed.feedback)
-      include(item.conversationId, item.messageId);
+      include(item.conversationId, item.messageId, item.conversationSource);
     for (const file of parsed.libraryFiles)
       include(file.initiatingConversationId, file.originationMessageId);
   };
   const reference = (
+    source: ConversationSource,
     conversationId: string | null,
     messageId: string,
     selected = false,
@@ -198,27 +263,27 @@ export function scopeExport(
       unscopedLinks.set(messageId, selected);
       return;
     }
-    let ids = scopedLinks.get(conversationId);
-    if (!ids) scopedLinks.set(conversationId, (ids = new Map()));
+    let ids = scopedLinks[source].get(conversationId);
+    if (!ids) scopedLinks[source].set(conversationId, (ids = new Map()));
     ids.set(messageId, selected);
   };
   let referenceCount = 0;
   let hasUnscoped = false;
-  forEachReference((conversationId) => {
+  forEachReference((_source, conversationId) => {
     referenceCount++;
     if (!conversationId) hasUnscoped = true;
   });
   if (referenceCount > messages.length) {
     for (const message of messages) {
       if (message.conversationId)
-        reference(message.conversationId, message.messageId, true);
+        reference(message.source, message.conversationId, message.messageId, true);
       if (hasUnscoped) unscopedLinks.set(message.messageId, true);
     }
   } else if (referenceCount) {
     forEachReference(reference);
     for (const message of messages) {
       const ids = message.conversationId
-        ? scopedLinks.get(message.conversationId)
+        ? scopedLinks[message.source].get(message.conversationId)
         : undefined;
       if (ids?.has(message.messageId)) ids.set(message.messageId, true);
       if (unscopedLinks.has(message.messageId))
@@ -226,27 +291,42 @@ export function scopeExport(
     }
   }
   const linked = (item: {
+    conversationSource?: ConversationSource;
     conversationId: string | null;
     messageId: string | null;
-  }) =>
-    item.messageId
-      ? item.conversationId
-        ? scopedLinks.get(item.conversationId)?.get(item.messageId) === true
-        : unscopedLinks.get(item.messageId) === true
-      : !!item.conversationId && conversationIds.has(item.conversationId);
+  }) => {
+    if (!item.conversationId)
+      return !!item.messageId && unscopedLinks.get(item.messageId) === true;
+    const source =
+      item.conversationSource || relatedSource(item.conversationId, item.messageId);
+    return item.messageId
+      ? scopedLinks[source].get(item.conversationId)?.get(item.messageId) === true
+      : conversationIds[source].has(item.conversationId);
+  };
   const preserveEmpty =
     !bounds && options.roles === "all" && options.branches === "all";
   const conversations = eligible
-    .filter((c) => preserveEmpty || conversationIds.has(c.conversationId))
+    .filter((c) => preserveEmpty || conversationIds[c.source].has(c.conversationId))
     .map((c) => ({
       ...c,
-      createTime: firstTimes.has(c.conversationId)
-        ? firstTimes.get(c.conversationId)! / 1000
+      createTime: firstTimes[c.source].has(c.conversationId)
+        ? firstTimes[c.source].get(c.conversationId)! / 1000
         : null,
       createTimeText: null,
       updateTime: null,
       updateTimeText: null,
     }));
+  const feedback: ParsedFeedback[] = [];
+  for (const item of parsed.feedback) {
+    if (!linked(item)) continue;
+    const source =
+      item.conversationSource || relatedSource(item.conversationId, item.messageId);
+    feedback.push(
+      source === "group_chat" && !item.conversationSource
+        ? { ...item, conversationSource: source }
+        : item,
+    );
+  }
   return {
     ...parsed,
     conversations,
@@ -255,12 +335,14 @@ export function scopeExport(
     assets: parsed.assets.filter(
       (a) => a.source !== "library_file" && linked(a),
     ),
-    feedback: parsed.feedback.filter(linked),
+    feedback,
     shares: parsed.shares.filter(
-      (s) => !!s.conversationId && conversationIds.has(s.conversationId),
+      (s) =>
+        !!s.conversationId &&
+        conversationIds[relatedSource(s.conversationId)].has(s.conversationId),
     ),
     groupChats: parsed.groupChats.filter(
-      (g) => options.includeGroups && conversationIds.has(g.id),
+      (g) => options.includeGroups && conversationIds.group_chat.has(g.id),
     ),
     libraryFiles: parsed.libraryFiles.filter((f) =>
       linked({

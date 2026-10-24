@@ -26,16 +26,25 @@ export function prepareReportDownload(data: WrappedData): {
         "Full conversation ranking omitted to keep this report reopenable / 为保持报告可重新打开，已省略完整会话排行；主要排行和汇总仍保留",
     },
   ];
+  // Migrated v1 reports retain a total, but only summarized warning details.
+  const warningCount = Math.min(
+    Number.MAX_SAFE_INTEGER,
+    Math.max(
+      data.meta.parse_warning_count,
+      data.meta.table_counts.parse_warnings,
+      data.warnings?.length || 0,
+    ) + 1,
+  );
   const compact: WrappedData = {
     ...data,
     conversations: { ...data.conversations, ranking: undefined },
     warnings,
     meta: {
       ...data.meta,
-      parse_warning_count: warnings.length,
+      parse_warning_count: warningCount,
       table_counts: {
         ...data.meta.table_counts,
-        parse_warnings: warnings.length,
+        parse_warnings: warningCount,
       },
     },
   };

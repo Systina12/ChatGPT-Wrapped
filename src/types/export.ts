@@ -1,4 +1,5 @@
 export type JsonObject = Record<string, unknown>;
+export type ConversationSource = "conversation" | "group_chat";
 
 export interface ExportEntry {
   path: string;
@@ -19,7 +20,7 @@ export interface SourceFile {
 export interface ParsedConversation {
   rowId: number;
   conversationId: string;
-  source: "conversation" | "group_chat";
+  source: ConversationSource;
   title: string | null;
   createTime: number | null;
   updateTime: number | null;
@@ -37,7 +38,7 @@ export interface ParsedConversation {
 export interface ParsedMessage {
   messageId: string;
   conversationId: string | null;
-  source: "conversation" | "group_chat";
+  source: ConversationSource;
   nodeId: string | null;
   parentNodeId: string | null;
   role: string | null;
@@ -53,6 +54,8 @@ export interface ParsedMessage {
 }
 
 export interface ParsedAsset {
+  /** Absent on ordinary conversation/library assets for backward compatibility. */
+  conversationSource?: ConversationSource;
   categoryHint?: "image" | "voice" | "file";
   source: "library_file" | "message_part" | "message_part_frame" | "attachment";
   localPath: string;
@@ -68,6 +71,7 @@ export interface ParsedAsset {
 }
 
 export interface ParsedFeedback {
+  conversationSource?: ConversationSource;
   id: string;
   conversationId: string | null;
   messageId: string | null;

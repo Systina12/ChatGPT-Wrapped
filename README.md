@@ -57,6 +57,8 @@ npm run test:e2e
 
 Browser tests build and serve `/ChatGPT-Wrapped/`, using Chromium desktop and mobile viewports by default. Set `CHROMIUM_PATH` for an installed executable; otherwise Playwright's Chromium is used (Linux `/usr/bin/chromium` is detected). Firefox/WebKit projects require their browsers and `PLAYWRIGHT_ALL_BROWSERS=1`. Their local success must be verified separately; it is not implied by Chromium results. The typecheck command also checks tests and tooling configuration.
 
+Stop any preview listening on port 4173 before running browser tests. Tests reject an existing server and always build their own current-source preview, so an old `dist` cannot silently satisfy the regression suite.
+
 Unit tests use synthetic data, including 150,000 messages, corrupt/empty input, ZIP/folder limits, attachment merging, DST, branch cycles/missing nodes, filtering, comparison, schema validation, storage failure and share privacy. Browser checks cover real import/recalculation, cancellation/stale worker responses, persistence, downloads, keyboard focus, responsive layouts and automated accessibility across all fourteen chapters at 320px. GitHub Actions checks Chromium, Firefox and WebKit on branches/PRs. Pages deploys only from `main`, after those checks succeed for the same commit.
 
 Source archives must come from committed files (`git archive`), include newly added modules and tests, and exclude dependencies, caches, real exports and secrets. Archive SHA256 and the corresponding commit are recorded alongside each delivery.
@@ -75,6 +77,7 @@ Complete statistics mount only when expanded. Long model, category, keyword and 
 
 The frontend review fixes and regression coverage are documented in [review-fixes-2026-10-21.md](docs/review-fixes-2026-10-21.md).
 The second review's data-integrity, performance and accessibility changes are documented in [review-fixes-2026-10-22.md](docs/review-fixes-2026-10-22.md).
+The four P2 review fixes for identity collisions, legacy warning totals and fresh browser builds are documented in [p2-fixes-2026-10-24.md](docs/p2-fixes-2026-10-24.md).
 
 Large-export optimizations, complete-report equivalence checks and timing variability are documented in [performance-2026-10-22.md](docs/performance-2026-10-22.md). Generate the 510,000-message synthetic fixture with `node scripts/generate-large-export.mjs /tmp/chatgpt-wrapped-synthetic`.
 

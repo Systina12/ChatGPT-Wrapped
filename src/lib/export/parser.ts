@@ -1,4 +1,5 @@
 import type {
+  ConversationSource,
   ExportEntry,
   JsonObject,
   ParsedAsset,
@@ -15,6 +16,7 @@ import type {
   SourceFile,
 } from "../../types/export";
 import { assetExtension, classifyAsset, mergeAssets, pathExtension } from "./assets";
+import { messageKey } from "./identity";
 import {
   isRelevantJson,
   ImportLimitError,
@@ -429,7 +431,9 @@ class ExportParser {
         raw: item,
       });
       if (conversationId) {
-        (byId.get(conversationId) || []).forEach((conversation) => {
+        const rows = byId.get(conversationId) || [];
+        const ordinary = rows.filter((row) => row.source === "conversation");
+        (ordinary.length ? ordinary : rows).forEach((conversation) => {
           conversation.isShared = true;
         });
       }
@@ -548,13 +552,13 @@ class ExportParser {
           const nextNode = node as JsonObject;
           const nextMessage = nextNode.message as JsonObject;
           const nextId = asStr(nextMessage.id) || asStr(nextNode.id) || key;
-          const messageKey = `${id}\0${oldId}`;
+          const oldKey = messageKey(id, oldId);
           if (
             nextId !== oldId &&
-            this.messages.get(messageKey)?.nodeId === key
+            this.messages.get(oldKey)?.nodeId === key
           ) {
-            this.messages.delete(messageKey);
-            this.messageAssets.delete(messageKey);
+            this.messages.delete(oldKey);
+            this.messageAssets.delete(oldKey);
             this.pendingAssetExtensions.get(id)?.delete(oldId);
           }
         }
@@ -621,7 +625,7 @@ class ExportParser {
       const author = isObject(message.author) ? message.author : {};
       const messageId = asStr(message.id) || asStr(node.id) || nodeId;
 
-      this.messages.set(`${conversationId}\0${messageId}`, {
+      this.messages.set(messageKey(conversationId, messageId), {
         messageId,
         conversationId,
         source: "conversation",
@@ -638,7 +642,7 @@ class ExportParser {
         modelSlug: asStr(metadata.model_slug),
         raw: null,
       });
-      const key = `${conversationId}\0${messageId}`;
+      const key = messageKey(conversationId, messageId);
       const previousAssets = this.messageAssets.get(key);
       this.messageAssets.delete(key);
       this.pendingAssetExtensions.get(conversationId)?.delete(messageId);
@@ -674,7 +678,7 @@ class ExportParser {
     const pending = this.pendingAssetExtensions.get(conversationId);
     if (!pending) return;
     for (const messageId of pending) {
-      const key = `${conversationId}\0${messageId}`;
+      const key = messageKey(conversationId, messageId);
       const previous = this.messageAssets.get(key);
       if (!previous) continue;
       // Merge explicit metadata first: an inferred suffix from a later duplicate
@@ -694,7 +698,7 @@ class ExportParser {
     messageIndex: number,
   ): void {
     const messageId = asStr(message.id) || `${chatId}-message-${messageIndex}`;
-    this.messages.set(`${chatId}\0${messageId}`, {
+    this.messages.set(messageKey(chatId, messageId, "group_chat"), {
       messageId,
       conversationId: chatId,
       source: "group_chat",
@@ -715,7 +719,7 @@ class ExportParser {
     if (Array.isArray(message.attachments)) {
       message.attachments.forEach((attachment) => {
         if (isObject(attachment)) {
-          this.insertAttachmentAsset(chatId, messageId, attachment);
+          this.insertAttachmentAsset(chatId, messageId, attachment, "group_chat");
         }
       });
     }
@@ -839,6 +843,7 @@ class ExportParser {
     conversationId: string,
     messageId: string,
     attachment: JsonObject,
+    conversationSource: ConversationSource = "conversation",
   ): void {
     const localPath =
       asStr(attachment.asset_pointer) ||
@@ -857,6 +862,7 @@ class ExportParser {
     const library = this.libraryForAsset(localPath, displayName);
     this.insertAsset({
       source: "attachment",
+      ...(conversationSource === "group_chat" ? { conversationSource } : {}),
       localPath,
       displayName,
       mimeType:
@@ -890,7 +896,11 @@ class ExportParser {
     }
     if (asset.source === "library_file") this.assets.push(asset);
     else {
-      const key = `${asset.conversationId}\0${asset.messageId}`;
+      const key = messageKey(
+        asset.conversationId!,
+        asset.messageId!,
+        asset.conversationSource,
+      );
       let assets = this.messageAssets.get(key);
       if (!assets) this.messageAssets.set(key, (assets = []));
       assets.push(asset);

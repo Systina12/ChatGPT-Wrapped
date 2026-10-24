@@ -48,7 +48,8 @@ export default defineConfig({
     command:
       "npm run build:pages && npm run preview -- --base=/ChatGPT-Wrapped/ --host 127.0.0.1 --port 4173 --strictPort",
     url: "http://127.0.0.1:4173/ChatGPT-Wrapped/",
-    reuseExistingServer: !process.env.CI,
+    // A running preview may serve an earlier build; always run the build above.
+    reuseExistingServer: false,
     timeout: 60000,
   },
 });
