@@ -10,7 +10,7 @@ The retired Python application and its tests were removed from `main` on 2026-10
 
 1. In ChatGPT, open **Settings → Data Controls → Export Data**. [Official instructions](https://help.openai.com/en/articles/7260999-how-do-i-export-my-chatgpt-history-and-data).
 2. Choose the official ZIP or its extracted folder. Folder selection depends on browser support; ZIP is the compatible alternative.
-3. Explore the report, change scope locally, or export a summary/share card. 中英文可随时切换；所有统计按所选时区计算。
+3. Explore the report, change scope locally, or export a summary/share card.
 
 ZIP limit: **512 MiB**. Relevant export JSON: **128 MiB per file**, **512 MiB combined after decompression**. Only recognized export JSON is inflated, sequentially, with actual output limits. Missing/damaged main conversation files are errors; an empty array is valid. Partial shards retain visible warnings. Non-null malformed message nodes are also reported; a main file containing only damaged message data fails.
 
@@ -74,15 +74,5 @@ See the [fourteen-page design and data mapping](docs/annual-report-14-pages.md).
 Complete statistics, warnings and JSON remain available from the report's utility buttons. The final page opens the share-card controls, retaining their default privacy settings. The locally generated card's own preview is independent of the report's page navigation.
 
 Complete statistics mount only when expanded. Long model, category, keyword and warning lists are paginated, retaining all values in the report. The story calendar has a keyboard-accessible daily data table; chapter markers scroll locally on narrow screens without reducing their touch target size.
-
-The frontend review fixes and regression coverage are documented in [review-fixes-2026-10-21.md](docs/review-fixes-2026-10-21.md).
-The second review's data-integrity, performance and accessibility changes are documented in [review-fixes-2026-10-22.md](docs/review-fixes-2026-10-22.md).
-The four P2 review fixes for identity collisions, legacy warning totals and fresh browser builds are documented in [p2-fixes-2026-10-24.md](docs/p2-fixes-2026-10-24.md).
-
-Large-export optimizations, complete-report equivalence checks and timing variability are documented in [performance-2026-10-22.md](docs/performance-2026-10-22.md). Generate the 510,000-message synthetic fixture with `node scripts/generate-large-export.mjs /tmp/chatgpt-wrapped-synthetic`.
-
-Follow-up work on long-message previews, streaming term counts, bounded Chinese-cache backing storage and report-JSON size checks is documented in [long-message-performance-2026-10-22.md](docs/long-message-performance-2026-10-22.md).
-
-Adaptive scope joins and lower-allocation aggregate statistics are documented in [scope-performance-2026-10-23.md](docs/scope-performance-2026-10-23.md).
 
 Performance work must preserve the pinned functional baseline. [The compatibility contract](docs/performance-compatibility.md) describes full-report/export checks; run them with `npm run test:compatibility`.
