@@ -1,8 +1,14 @@
 # ChatGPT Wrapped
 
+**中文** | [English](README.en.md)
+
 把你的 ChatGPT 聊天记录，变成一份属于自己的年度报告。
 
 [**在线生成你的报告 →**](https://systina12.github.io/ChatGPT-Wrapped/)
+
+![ChatGPT Wrapped 年度报告预览：紫色背景、荧光绿图形与消息总数](docs/images/report-preview.png)
+
+*报告实机截图，使用合成演示数据，不含真实聊天记录。*
 
 ## 怎么使用
 

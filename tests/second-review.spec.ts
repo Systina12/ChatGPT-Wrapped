@@ -25,7 +25,7 @@ test("large weekly labels fit on one line in both languages at 320px", async ({
   await importReport(page, report);
   await ready(page);
   for (const language of ["en", "zh"]) {
-    await page.getByLabel("界面语言 / Language").selectOption(language);
+    await page.getByLabel("语言 / Language", { exact: true }).selectOption(language);
     await page
       .getByRole("button", {
         name: language === "en" ? "Enter my annual report" : "进入我的年度报告",

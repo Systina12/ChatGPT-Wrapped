@@ -1124,9 +1124,6 @@ button:hover:not(:disabled) {
   .annual-share-button {
     font-size: 0.78rem;
   }
-  .topbar label {
-    font-size: 0;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   *,

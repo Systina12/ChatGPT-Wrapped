@@ -5,7 +5,7 @@ import { buildReport } from "../src/lib/report/engine";
 import type { ExportEntry } from "../src/types/export";
 export async function visit(page: Page) {
   await page.goto("./");
-  await page.getByLabel("界面语言 / Language").selectOption("en");
+  await page.getByLabel("语言 / Language", { exact: true }).selectOption("en");
 }
 export async function importZip(
   page: Page,

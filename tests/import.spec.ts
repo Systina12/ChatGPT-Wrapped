@@ -14,11 +14,16 @@ test("Pages subpath loads with language controls", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
     "Every question",
   );
-  await page.getByLabel("界面语言 / Language").selectOption("zh");
+  const language = page.getByLabel("语言 / Language", { exact: true });
+  await expect(page.locator(".language-control > span")).toBeVisible();
+  await language.selectOption("zh");
   await expect(
     page.getByRole("button", { name: "选择 ZIP", exact: true }),
   ).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  await expect(page.locator(".language-control > span")).toHaveText(
+    "语言 / Language",
+  );
 });
 test("damaged export displays a clear error", async ({ page }) => {
   await importZip(page, [

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Languages } from "lucide-react";
 import { Hero } from "./components/hero/Hero";
 import { Report } from "./components/report/Report";
 import { ReportControls } from "./components/report/ReportControls";
@@ -27,10 +28,11 @@ function Workspace() {
         <a className="brand" href={import.meta.env.BASE_URL}>
           CHATGPT<span>WRAPPED ↗</span>
         </a>
-        <label>
-          {t("界面语言", "Language")}
+        <label className="language-control">
+          <Languages size={18} aria-hidden="true" />
+          <span>语言 / Language</span>
           <select
-            aria-label="界面语言 / Language"
+            aria-label="语言 / Language"
             value={language}
             onChange={(e) => setLanguage(e.target.value as "zh" | "en")}
           >

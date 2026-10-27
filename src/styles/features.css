@@ -16,11 +16,20 @@
 .brand span {
   font-size: 1.5rem;
 }
-.topbar label {
-  display: flex;
+.topbar .language-control {
+  display: grid;
+  grid-template-columns: 18px auto;
   align-items: center;
-  gap: 10px;
+  gap: 4px 8px;
   font-size: 0.8rem;
+}
+.language-control > svg {
+  grid-row: 1 / 3;
+}
+.topbar .language-control > select {
+  grid-column: 2;
+  width: auto;
+  margin: 0;
 }
 select,
 input {
@@ -319,8 +328,8 @@ progress {
     max-width: 300px;
     margin: auto;
   }
-  .topbar label {
-    font-size: 0;
+  .topbar .language-control {
+    font-size: 0.7rem;
   }
   .topbar select {
     font-size: 0.85rem;
