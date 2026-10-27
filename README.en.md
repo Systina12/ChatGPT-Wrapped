@@ -8,8 +8,6 @@ Turn your ChatGPT history into your own year in review.
 
 ![ChatGPT Wrapped annual report preview: a purple background, lime green artwork and a message total](docs/images/report-preview.png)
 
-*Screenshot of the app using synthetic demo data. No real chat history is shown.*
-
 ## Get started
 
 1. In ChatGPT, open **Settings → Data Controls → Export Data** and download your official export.
