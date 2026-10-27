@@ -5,9 +5,6 @@ import { parseExportEntries } from "../src/lib/export/parser";
 import {
   filesToExportEntries,
   checkJsonSize,
-  MAX_JSON_BYTES,
-  MAX_TOTAL_JSON_BYTES,
-  MAX_ZIP_BYTES,
 } from "../src/lib/export/fileInput";
 import { buildReport } from "../src/lib/report/engine";
 import { DEFAULT_OPTIONS } from "../src/types/options";
@@ -63,23 +60,25 @@ describe("main input integrity", () => {
   });
 });
 describe("size limits and selective inflation", () => {
-  it("checks individual and total limits", () => {
-    expect(() => checkJsonSize(MAX_JSON_BYTES + 1, 0)).toThrow(/128/);
-    expect(() => checkJsonSize(1, MAX_TOTAL_JSON_BYTES + 1)).toThrow(/512/);
-    expect(() =>
-      checkJsonSize(MAX_JSON_BYTES, MAX_TOTAL_JSON_BYTES),
-    ).not.toThrow();
+  const limits = { fileBytes: 128, totalBytes: 512 };
+  it("enforces an explicit caller budget at the exact boundaries", () => {
+    expect(() => checkJsonSize(129, 129, limits)).toThrow(/per-file/);
+    expect(() => checkJsonSize(1, 513, limits)).toThrow(/total/);
+    expect(() => checkJsonSize(128, 512, limits)).not.toThrow();
   });
-  it("rejects oversized ZIP before reading", async () => {
-    const file = { name: "x.zip", size: MAX_ZIP_BYTES + 1 } as globalThis.File;
-    await expect(filesToExportEntries([file])).rejects.toThrow(/512/);
+  it("does not impose the former per-file or total JSON caps by default", async () => {
+    expect(() => checkJsonSize(2 ** 30, 6 * 2 ** 30)).not.toThrow();
+    const files = Array.from({ length: 5 }, (_, i) => ({
+      name: `conversations-${i}.json`, size: 256 * 1024 * 1024,
+    } as globalThis.File));
+    expect(await filesToExportEntries(files)).toHaveLength(5);
   });
-  it("checks folders before parsing", async () => {
+  it("applies an explicit per-file budget to folders before parsing", async () => {
     const file = {
       name: "conversations.json",
-      size: MAX_JSON_BYTES + 1,
+      size: 129,
     } as globalThis.File;
-    await expect(filesToExportEntries([file])).rejects.toThrow(/128/);
+    await expect(filesToExportEntries([file], { limits })).rejects.toThrow(/per-file/);
   });
   it("checks cumulative folder size", async () => {
     const files = Array.from(
@@ -87,10 +86,10 @@ describe("size limits and selective inflation", () => {
       (_, i) =>
         ({
           name: `conversations-${i}.json`,
-          size: MAX_JSON_BYTES,
+          size: 128,
         }) as globalThis.File,
     );
-    await expect(filesToExportEntries(files)).rejects.toThrow(/512/);
+    await expect(filesToExportEntries(files, { limits })).rejects.toThrow(/total/);
   });
   it("inflates only relevant JSON and reports progress", async () => {
     const zip = new JSZip();

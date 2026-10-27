@@ -1,8 +1,5 @@
 import { BlobReader, ZipReader } from "@zip.js/zip.js";
 import type { ExportEntry } from "../../types/export";
-export const MAX_ZIP_BYTES = 512 * 1024 * 1024;
-export const MAX_JSON_BYTES = 128 * 1024 * 1024;
-export const MAX_TOTAL_JSON_BYTES = 512 * 1024 * 1024;
 export interface ImportProgress {
   phase: "reading" | "parsing" | "statistics";
   completed: number;
@@ -11,6 +8,8 @@ export interface ImportProgress {
 export interface ReadOptions {
   signal?: AbortSignal;
   onProgress?: (progress: ImportProgress) => void;
+  /** Optional caller budget; normal local imports impose no fixed size cap. */
+  limits?: Readonly<JsonLimits>;
 }
 const names = new Set([
   "export_manifest.json",
@@ -36,8 +35,8 @@ export interface JsonLimits {
   totalBytes: number;
 }
 export const JSON_LIMITS: Readonly<JsonLimits> = Object.freeze({
-  fileBytes: MAX_JSON_BYTES,
-  totalBytes: MAX_TOTAL_JSON_BYTES,
+  fileBytes: Infinity,
+  totalBytes: Infinity,
 });
 export class ImportLimitError extends Error {}
 export function checkJsonSize(
@@ -47,11 +46,11 @@ export function checkJsonSize(
 ): void {
   if (size > limits.fileBytes)
     throw new ImportLimitError(
-      "A report JSON exceeds 128 MiB / 单个数据 JSON 超过 128 MiB",
+      "Data JSON exceeds the configured per-file limit / 数据 JSON 超过指定的单文件限制",
     );
   if (total > limits.totalBytes)
     throw new ImportLimitError(
-      "Report JSON total exceeds 512 MiB / 数据 JSON 总量超过 512 MiB",
+      "Data JSON exceeds the configured total limit / 数据 JSON 超过指定的总量限制",
     );
 }
 export async function filesToExportEntries(
@@ -74,7 +73,7 @@ export async function filesToExportEntries(
       file.name;
     if (isRelevantJson(path)) {
       total += file.size;
-      checkJsonSize(file.size, total);
+      checkJsonSize(file.size, total, options.limits);
     }
     entries.push({ path, name: basename(path), size: file.size, file });
   }
@@ -89,8 +88,6 @@ async function zipToEntries(
   file: File,
   options: ReadOptions,
 ): Promise<ExportEntry[]> {
-  if (file.size > MAX_ZIP_BYTES)
-    throw new Error("ZIP exceeds 512 MiB / ZIP 超过 512 MiB");
   // BlobReader slices the central directory and requested compressed entries.
   // Large binary attachments are not materialized as an archive-sized buffer.
   const archive = new ZipReader(new BlobReader(file), {
@@ -114,7 +111,7 @@ async function zipToEntries(
     if (isRelevantJson(entry.filename)) {
       relevantCount++;
       declaredTotal += record.size;
-      checkJsonSize(record.size, declaredTotal);
+      checkJsonSize(record.size, declaredTotal, options.limits);
       record.readText = async () => {
         aborted(options.signal);
         const result = await readBoundedZipText(
@@ -124,6 +121,7 @@ async function zipToEntries(
           (bytes) => {
             total += bytes;
           },
+          options.limits,
         );
         if (result.sizeBytes !== record.size)
           throw new Error("Invalid ZIP uncompressed size / ZIP 解压大小不一致");
@@ -140,7 +138,7 @@ async function zipToEntries(
   await archive.close();
   return normalize(entries);
 }
-/** Enforce actual inflated bytes in the sink, before retaining or decoding them. */
+/** Count actual inflated bytes and apply any caller budget before decoding. */
 export async function readBoundedZipText(
   consume: (sink: WritableStream<Uint8Array>) => Promise<unknown>,
   previousBytes: number,
@@ -184,7 +182,7 @@ export async function readJsonEntry(entry: ExportEntry): Promise<unknown> {
     entry.readText = undefined;
   }
   if (text === undefined) return undefined;
-  // ZIP bytes were checked by the sink; File sizes are immutable. Re-encoding
+  // ZIP bytes were counted by the sink; File sizes are immutable. Re-encoding
   // either just to measure it would allocate another entire shard.
   if (entry.text !== undefined) checkJsonSize(new Blob([text]).size, 0);
   return JSON.parse(text);

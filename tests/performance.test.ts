@@ -254,7 +254,7 @@ describe("bounded lazy ZIP imports", () => {
         undefined,
         limits,
       ),
-    ).rejects.toThrow(/512/);
+    ).rejects.toThrow(/total/);
     const entry = {
       name: "conversations-1.json",
       path: "conversations-1.json",

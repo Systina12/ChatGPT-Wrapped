@@ -47,8 +47,8 @@ export function EmptyState() {
         </a>
         <br />
         {t(
-          "ZIP 上限 512 MiB；单个数据 JSON 128 MiB；解压 JSON 合计 512 MiB。汇总报告导入上限 20 MiB。文件夹选择支持因浏览器而异，不支持时请使用 ZIP。",
-          "ZIP: 512 MiB; each data JSON: 128 MiB; combined JSON: 512 MiB. Summary report import: 20 MiB. Folder selection varies by browser; use ZIP when unavailable.",
+          "大文件按需读取，图片、音频等附件不会被解压，可随时取消。文件夹选择不受浏览器支持时请使用 ZIP。单独导入汇总报告 JSON 的上限为 20 MiB。",
+          "Large archives are read on demand; images, audio and other attachments are not extracted. You can cancel at any time. Use ZIP if folder selection is unavailable. Separate summary report JSON imports support up to 20 MiB.",
         )}
       </p>
     </section>

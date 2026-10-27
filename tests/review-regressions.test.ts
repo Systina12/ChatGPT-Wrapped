@@ -416,7 +416,7 @@ describe("actual decompressed output caps", () => {
         fileBytes: 16,
         totalBytes: 100,
       }),
-    ).rejects.toThrow(/128/);
+    ).rejects.toThrow(/per-file/);
     expect(stream.writes()).toBe(2);
   });
   it("enforces cumulative real bytes across entries even within the per-file cap", async () => {
@@ -439,7 +439,7 @@ describe("actual decompressed output caps", () => {
           totalBytes: 24,
         },
       ),
-    ).rejects.toThrow(/512/);
+    ).rejects.toThrow(/total/);
     expect(stream.writes()).toBe(2);
   });
   it("accepts actual output exactly at both limits", async () => {

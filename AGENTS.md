@@ -10,3 +10,5 @@ The user's standing requirement is to preserve all existing frontend behavior du
 - Measure the affected path before and after under comparable conditions. Report scope, variability, memory/CPU tradeoffs and slower cases. Test success is evidence within its coverage, not proof for every possible input.
 
 The user has authorized ordinary implementation, verification, commits and synchronization to `main`; these requirements do not add a confirmation step.
+
+On 2026-10-27 the user explicitly superseded the original fixed raw-export import limits. Normal ZIP/folder imports must not reject archives, individual export JSON files or their combined size at the old 512/128/512 MiB thresholds. Keep selective lazy reads, sequential JSON processing, cancellation, CRC and size-consistency validation. Optional explicit caller budgets remain testable. The separate 20 MiB summary-report import limit is unchanged. This authorized input-policy change must not be disguised as a performance optimization or used to rewrite the pinned report baseline.
